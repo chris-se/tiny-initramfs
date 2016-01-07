@@ -1,5 +1,5 @@
 /*
- * tiny_initrd - Minimalistic initrd implementation
+ * tiny_initramfs - Minimalistic initramfs implementation
  * Copyright (C) 2016 Christian Seiler <christian@iwakd.de>
  *
  * io.c: I/O helper functions
@@ -24,7 +24,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include "tiny_initrd.h"
+#include "tiny_initramfs.h"
 
 int traverse_file_by_line(const char *filename, traverse_line_t fn, void *data)
 {

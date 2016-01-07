@@ -1,8 +1,8 @@
 /*
- * tiny_initrd - Minimalistic initrd implementation
+ * tiny_initramfs - Minimalistic initramfs implementation
  * Copyright (C) 2016 Christian Seiler <christian@iwakd.de>
  *
- * tiny_initrd.c: main program
+ * tiny_initramfs.c: main program
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "tiny_initrd.h"
+#include "tiny_initramfs.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/mount.h>
@@ -101,7 +101,7 @@ int main(int argc, char **argv)
   if (!r)
     r = mount("/proc", TARGET_DIRECTORY "/proc", NULL, MS_MOVE, NULL);
   if (r < 0)
-    panic(errno, LOG_PREFIX, "Couldn't move /dev or /proc from initrd to root filesystem", NULL);
+    panic(errno, LOG_PREFIX, "Couldn't move /dev or /proc from initramfs to root filesystem", NULL);
 
   /* switch root */
   r = chdir(TARGET_DIRECTORY);

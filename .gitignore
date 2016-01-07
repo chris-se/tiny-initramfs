@@ -1,4 +1,4 @@
 *.o
 initrd.img
 initramfs/
-tiny_initrd
+tiny_initramfs

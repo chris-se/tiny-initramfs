@@ -15,18 +15,18 @@ GZIP=gzip
 
 .PHONY: clean all
 
-all: tiny_initrd
+all: tiny_initramfs
 
-tiny_initrd: tiny_initrd.o io.o fstab.o mount.o log.o
+tiny_initramfs: tiny_initramfs.o io.o fstab.o mount.o log.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-initrd.img: tiny_initrd
+initrd.img: tiny_initramfs
 	if [ -d initramfs ] ; then $(RM_R) initramfs ; fi
 	$(MKDIR) initramfs initramfs/dev initramfs/proc initramfs/target
-	$(CP) tiny_initrd initramfs/init
+	$(CP) tiny_initramfs initramfs/init
 	$(STRIP) initramfs/init
 	cd initramfs ; $(FIND) . | $(CPIO) -o $(CPIO_ARGS) | $(GZIP) > ../initrd.img ; cd ..
 	$(RM_R) initramfs
 
 clean:
-	rm -f *~ *.o tiny_initrd initrd.img
+	rm -f *~ *.o tiny_initramfs initrd.img

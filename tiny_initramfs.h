@@ -1,8 +1,8 @@
 /*
- * tiny_initrd - Minimalistic initrd implementation
+ * tiny_initramfs - Minimalistic initramfs implementation
  * Copyright (C) 2016 Christian Seiler <christian@iwakd.de>
  *
- * tiny_initrd.h: function declarations
+ * tiny_initramfs.h: function declarations
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,8 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TINY_INITRD_H
-#define TINY_INITRD_H
+#ifndef TINY_INITRAMFS_H
+#define TINY_INITRAMFS_H
 
 #include <sys/types.h>
 #include <fcntl.h>
@@ -61,7 +61,7 @@
 #endif
 
 #ifndef LOG_PREFIX
-#define LOG_PREFIX                 "initrd: "
+#define LOG_PREFIX                 "initramfs: "
 #endif
 
 #ifndef DEVTMPFS_MOUNTOPTS
@@ -108,4 +108,4 @@ int mount_filesystem(const char *source, const char *target, const char *type, c
 void panic(int err, ...) __attribute__((noreturn));
 void warn(const char *str1, ...);
 
-#endif /* !defined(TINY_INITRD_H) */
+#endif /* !defined(TINY_INITRAMFS_H) */

@@ -1,5 +1,5 @@
 /*
- * tiny_initrd - Minimalistic initrd implementation
+ * tiny_initramfs - Minimalistic initramfs implementation
  * Copyright (C) 2016 Christian Seiler <christian@iwakd.de>
  *
  * mount.c: Helper functions for mounting filesystems
@@ -22,7 +22,7 @@
 #include <sys/mount.h>
 #include <errno.h>
 
-#include "tiny_initrd.h"
+#include "tiny_initramfs.h"
 
 static char supported_filesystems[MAX_SUPPORTED_FILESYSTEMS][MAX_FILESYSTEM_TYPE_LEN];
 static int supported_filesystems_count;

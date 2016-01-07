@@ -1,5 +1,5 @@
 /*
- * tiny_initrd - Minimalistic initrd implementation
+ * tiny_initramfs - Minimalistic initramfs implementation
  * Copyright (C) 2016 Christian Seiler <christian@iwakd.de>
  *
  * io.c: I/O helper functions
@@ -22,7 +22,7 @@
 #include <errno.h>
 #include <stdlib.h>
 
-#include "tiny_initrd.h"
+#include "tiny_initramfs.h"
 
 typedef struct fstab_find_fs_data {
   const char *dest;

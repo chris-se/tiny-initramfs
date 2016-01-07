@@ -1,5 +1,5 @@
 /*
- * tiny_initrd - Minimalistic initrd implementation
+ * tiny_initramfs - Minimalistic initramfs implementation
  * Copyright (C) 2016 Christian Seiler <christian@iwakd.de>
  *
  * log.c: Basic logging helpers
@@ -18,7 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "tiny_initrd.h"
+#include "tiny_initramfs.h"
 
 #include <sys/uio.h>
 #include <stdarg.h>
