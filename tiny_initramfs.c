@@ -45,15 +45,31 @@ int main(int argc, char **argv)
   fstab_info usrfs_info;
   char real_device_name[MAX_PATH_LEN];
 
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[ 0  ] Startup", NULL);
+#endif
+
   r = mount("proc", "/proc", "proc", MS_NODEV | MS_NOEXEC | MS_NOSUID, NULL);
   if (r < 0)
     panic(errno, LOG_PREFIX, "Could not mount /proc", NULL);
+
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[ 1  ] /proc mounted", NULL);
+#endif
 
   r = mount("udev", "/dev", "devtmpfs", 0, DEVTMPFS_MOUNTOPTS);
   if (r < 0)
     panic(errno, LOG_PREFIX, "Could not mount /dev (as devtmpfs)", NULL);
 
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[ 2  ] /dev mounted", NULL);
+#endif
+
   parse_cmdline();
+
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[ 3  ] ", PROC_CMDLINE_FILENAME, " parsed", NULL);
+#endif
 
   if (!strlen(root_device))
     panic(0, LOG_PREFIX, "No root filesystem (root=) specified", NULL);
@@ -62,9 +78,17 @@ int main(int argc, char **argv)
     timeout_togo = -1;
   wait_for_device(real_device_name, &timeout_togo, root_device, root_delay);
 
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[ 4  ] waited for root device", NULL);
+#endif
+
   r = mount_filesystem(real_device_name, TARGET_DIRECTORY, strlen(root_fstype) ? root_fstype : NULL, root_options, global_rw ? 0 : MS_RDONLY, global_rw ? MS_RDONLY : 0);
   if (r < 0)
     panic(-r, LOG_PREFIX, "Failed to mount root filesystem from ", root_device, NULL);
+
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[ 5  ] mounted root filesystem", NULL);
+#endif
 
   /* We need these regardless of /usr handling */
   if (access(TARGET_DIRECTORY "/dev", F_OK) != 0)
@@ -81,21 +105,41 @@ int main(int argc, char **argv)
   if (r == -ENODEV)
     panic(0, LOG_PREFIX, "Entry in /etc/fstab for /usr must be a (non-symlink) kernel device path, or of the form UUID=.", NULL);
 
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[ 6  ] parsed /etc/fstab", NULL);
+#endif
+
   if (r == 0) {
     /* wait for /usr filesystem device */
     wait_for_device(real_device_name, &timeout_togo, usrfs_info.source, 0);
+
+#ifdef DEBUG_INITRAMFS
+    warn(LOG_PREFIX, "[ 6.1] waited for /usr device", NULL);
+#endif
 
     /* mount it */
     r = mount_filesystem(real_device_name, TARGET_DIRECTORY "/usr", usrfs_info.type, usrfs_info.options, global_rw ? 0 : MS_RDONLY, global_rw ? MS_RDONLY : 0);
     if (r < 0)
       panic(-r, LOG_PREFIX, "Failed to mount /usr filesystem from ", usrfs_info.source, NULL);
+
+#ifdef DEBUG_INITRAMFS
+    warn(LOG_PREFIX, "[ 6.2] mounted /usr filesystem", NULL);
+#endif
   }
 
   /* move mounts */
   r = mount("/dev", TARGET_DIRECTORY "/dev", NULL, MS_MOVE, NULL);
 
+#ifdef DEBUG_INITRAMFS
+    warn(LOG_PREFIX, "[ 7  ] moved /dev", NULL);
+#endif
+
   if (!r)
     r = mount("/proc", TARGET_DIRECTORY "/proc", NULL, MS_MOVE, NULL);
+
+#ifdef DEBUG_INITRAMFS
+    warn(LOG_PREFIX, "[ 8  ] moved /proc", NULL);
+#endif
 
   if (r < 0)
     panic(errno, LOG_PREFIX, "Couldn't move /dev or /proc from initramfs to root filesystem", NULL);
@@ -108,6 +152,11 @@ int main(int argc, char **argv)
     r = chroot(".");
   if (r < 0)
     panic(errno, LOG_PREFIX, "Couldn't switch root filesystem", NULL);
+
+#ifdef DEBUG_INITRAMFS
+    warn(LOG_PREFIX, "[ 9  ] switched root, sleeping for 5s", NULL);
+    sleep(5);
+#endif
 
   if (strlen(init_binary)) {
     try_exec(argc, argv, init_binary);
