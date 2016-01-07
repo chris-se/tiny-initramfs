@@ -158,15 +158,15 @@ work with your favorite libc implementation, please report this, so
 that it may be fixed.
 
 Find out the compile command required to use your C library. For
-example, with musl it's `musl-gcc`, with dietlibc it's `diet gcc`.
+example, with musl it's `musl-gcc`, with dietlibc it's `"diet gcc"`.
 
 Use
 
-    CC=musl-gcc make
+    make CC=musl-gcc
 
 to compile the `tiny_initramfs` binary and
 
-    CC=musl-gcc make initrd.img
+    make initrd.img CC=musl-gcc
 
 to auto-create the initramfs image. Replace `musl-gcc` with the
 appropriate command for your libc implementation.
