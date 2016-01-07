@@ -27,7 +27,6 @@
 #include <errno.h>
 #include <string.h>
 #include <limits.h>
-#include <stdio.h>
 
 static void parse_cmdline();
 static int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete);
@@ -120,8 +119,6 @@ int main(int argc, char **argv)
     try_exec(argc, argv, "/bin/init");
     try_exec(argc, argv, "/bin/sh");
   }
-
-  printf("hello world\n");
 
   /* Message stolen from Linux's init/main.c */
   panic(0, "No working init found. Try passing init= option to kernel. "
