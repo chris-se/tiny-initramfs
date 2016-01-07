@@ -80,7 +80,7 @@
 #define DEVICE_POLL_MSEC           50
 #endif
 
-/* Not all alternative libc implementations support this yet. */
+/* Not all alternative libc implementations support these constants yet. */
 #ifndef O_CLOEXEC
 #define O_CLOEXEC                  02000000
 #endif
@@ -107,5 +107,16 @@ int mount_filesystem(const char *source, const char *target, const char *type, c
 /* log.c */
 void panic(int err, ...) __attribute__((noreturn));
 void warn(const char *str1, ...);
+
+/* devices.c */
+enum {
+  WANT_NAME   = 0,
+  WANT_MAJMIN = 1,
+  WANT_UUID   = 2
+};
+void wait_for_device(char *real_device_name /* MAX_PATH_LEN bytes */, int *timeout, const char *device, int delay);
+int scan_devices(char *device_name /* MAX_PATH_LEN bytes */, int type, unsigned int maj, unsigned int min, const char *uuid /* 16 bytes */);
+int parse_uuid(char *uuid_buf /* 16 bytes */, const char *string_representation);
+int is_valid_device_name(const char *device_name, int *type, unsigned int* major, unsigned int *minor, char *uuid /* 16 bytes */);
 
 #endif /* !defined(TINY_INITRAMFS_H) */

@@ -22,15 +22,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/mount.h>
-#include <sys/time.h>
-#include <time.h>
 #include <errno.h>
 #include <string.h>
 #include <limits.h>
 
 static void parse_cmdline();
 static int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete);
-static void wait_for_device(int *timeout, const char *device, int delay);
 static void try_exec(int orig_argc, char *const orig_argv[], const char *binary);
 
 static char root_device[MAX_PATH_LEN];
@@ -46,10 +43,12 @@ int main(int argc, char **argv)
   int r;
   int timeout_togo = DEVICE_TIMEOUT;
   fstab_info usrfs_info;
+  char real_device_name[MAX_PATH_LEN];
 
   r = mount("proc", "/proc", "proc", MS_NODEV | MS_NOEXEC | MS_NOSUID, NULL);
   if (r < 0)
     panic(errno, LOG_PREFIX, "Could not mount /proc", NULL);
+
   r = mount("udev", "/dev", "devtmpfs", 0, DEVTMPFS_MOUNTOPTS);
   if (r < 0)
     panic(errno, LOG_PREFIX, "Could not mount /dev (as devtmpfs)", NULL);
@@ -59,14 +58,11 @@ int main(int argc, char **argv)
   if (!strlen(root_device))
     panic(0, LOG_PREFIX, "No root filesystem (root=) specified", NULL);
 
-  if (strncmp(root_device, "/dev/", 5) != 0)
-    panic(0, LOG_PREFIX, "root filesystem (root=) must be a (non-symlink) kernel device path, got ", root_device, " instead.", NULL);
-
   if (root_wait_indefinitely)
     timeout_togo = -1;
-  wait_for_device(&timeout_togo, root_device, root_delay);
+  wait_for_device(real_device_name, &timeout_togo, root_device, root_delay);
 
-  r = mount_filesystem(root_device, TARGET_DIRECTORY, strlen(root_fstype) ? root_fstype : NULL, root_options, global_rw ? 0 : MS_RDONLY, global_rw ? MS_RDONLY : 0);
+  r = mount_filesystem(real_device_name, TARGET_DIRECTORY, strlen(root_fstype) ? root_fstype : NULL, root_options, global_rw ? 0 : MS_RDONLY, global_rw ? MS_RDONLY : 0);
   if (r < 0)
     panic(-r, LOG_PREFIX, "Failed to mount root filesystem from ", root_device, NULL);
 
@@ -83,22 +79,24 @@ int main(int argc, char **argv)
   if (r < 0 && r != -ENOENT && r != -ENODEV)
     panic(-r, LOG_PREFIX, "Failed to parse /etc/fstab in root device (non-existence would not be an error)", NULL);
   if (r == -ENODEV)
-    panic(0, LOG_PREFIX, "Entry in /etc/fstab for /usr must be a (non-symlink) kernel device path.", NULL);
+    panic(0, LOG_PREFIX, "Entry in /etc/fstab for /usr must be a (non-symlink) kernel device path, or of the form UUID=.", NULL);
 
   if (r == 0) {
     /* wait for /usr filesystem device */
-    wait_for_device(&timeout_togo, usrfs_info.source, 0);
+    wait_for_device(real_device_name, &timeout_togo, usrfs_info.source, 0);
 
     /* mount it */
-    r = mount_filesystem(usrfs_info.source, TARGET_DIRECTORY "/usr", usrfs_info.type, usrfs_info.options, global_rw ? 0 : MS_RDONLY, global_rw ? MS_RDONLY : 0);
+    r = mount_filesystem(real_device_name, TARGET_DIRECTORY "/usr", usrfs_info.type, usrfs_info.options, global_rw ? 0 : MS_RDONLY, global_rw ? MS_RDONLY : 0);
     if (r < 0)
       panic(-r, LOG_PREFIX, "Failed to mount /usr filesystem from ", usrfs_info.source, NULL);
   }
 
   /* move mounts */
   r = mount("/dev", TARGET_DIRECTORY "/dev", NULL, MS_MOVE, NULL);
+
   if (!r)
     r = mount("/proc", TARGET_DIRECTORY "/proc", NULL, MS_MOVE, NULL);
+
   if (r < 0)
     panic(errno, LOG_PREFIX, "Couldn't move /dev or /proc from initramfs to root filesystem", NULL);
 
@@ -151,6 +149,8 @@ int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete)
       token += 5;
       if (strlen(token) > MAX_PATH_LEN - 1)
         panic(0, LOG_PREFIX, "Parameter root=", token, " too long", NULL);
+      if (!is_valid_device_name(token, NULL, NULL, NULL, NULL))
+        panic(0, LOG_PREFIX, "Parameter root=", token, " unsupported (only /dev/, 0xMAJMIN and UUID= are supported)", NULL);
       strncpy(root_device, token, MAX_PATH_LEN);
     } else if (!strncmp(token, "rootflags=", 10)) {
       token += 10;
@@ -182,60 +182,6 @@ int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete)
     }
   }
   return 0;
-}
-
-void wait_for_device(int *timeout, const char *device, int delay)
-{
-  /* We don't have udev running, but there is devtmpfs, so we just
-   * do a very simple and stupid polling loop to wait until the
-   * requested device is present. This could be improved a bit,
-   * but for now it's good enough. */
-  time_t start;
-  struct timeval tv;
-  int r;
-  static int have_shown_message_timeout;
-
-  if (delay) {
-    struct timespec req = { delay, 0 };
-    struct timespec rem;
-    (void)nanosleep(&req, &rem);
-  }
-
-  /* Our timeout starts *after* the rootdelay. */
-  r = gettimeofday(&tv, NULL);
-  if (r < 0)
-    panic(errno, LOG_PREFIX, "Couldn't determine current time for timeout", NULL);
-  start = tv.tv_sec;
-
-  while (access(device, F_OK) != 0) {
-    r = gettimeofday(&tv, NULL);
-    if (r < 0)
-      panic(errno, LOG_PREFIX, "Couldn't determine current time for timeout", NULL);
-    if (*timeout > 0 && tv.tv_sec - start > *timeout)
-      panic(0, LOG_PREFIX, "Timeout while waiting for devices for / (and possibly /usr) filesystems to appear "
-                           "(did you specify the correct ones?)", NULL);
-    /* In case this takes longer, show a nice message so the user has SOME
-     * idea of what's going on here. */
-    if (tv.tv_sec - start > DEVICE_MESSAGE_TIMEOUT && !have_shown_message_timeout) {
-      have_shown_message_timeout = 1;
-      warn(LOG_PREFIX, "Waiting for ", device, " to appear...", NULL);
-    }
-    /* Sleep for DEVICE_POLL_MSEC milliseconds, then poll again. */
-    struct timespec req = { 0, DEVICE_POLL_MSEC * 1000 * 1000 };
-    struct timespec rem;
-    (void)nanosleep(&req, &rem);
-  }
-
-  /* Make sure we record how many seconds on the timeout are left,
-   * because this function may be called again for the /usr filesystem. */
-  if (*timeout > 0) {
-    r = gettimeofday(&tv, NULL);
-    if (r < 0)
-      panic(errno, LOG_PREFIX, "Couldn't determine current time for timeout", NULL);
-    *timeout = tv.tv_sec - start;
-    if (*timeout <= 0)
-      *timeout = 1;
-  }
 }
 
 void try_exec(int orig_argc, char *const orig_argv[], const char *binary)

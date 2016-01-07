@@ -73,11 +73,12 @@ int mount_filesystem(const char *source, const char *target,
 
 int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char *option_string)
 {
-  static struct {
+  typedef struct {
     const char *name;
     int flags;
     int extra;
-  } option_definitions[] = {
+  } mount_option_t;
+  static mount_option_t option_definitions[] = {
     { "ro",          MS_RDONLY,          0                         },
     { "rw",          MS_RDONLY,          INVERTED                  },
     { "exec",        MS_NOEXEC,          INVERTED | HAS_NO_VARIANT },
@@ -138,7 +139,8 @@ int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char 
     { "uhelper=",    0,                  IGNORE                    },
     { "helper=",     0,                  IGNORE                    },
     { NULL,          0,                  0                         }
-  }, *optdef, *this_optdef;
+  };
+  mount_option_t *optdef, *this_optdef;
   char opts[MAX_LINE_LEN] = { 0 };
   char *saveptr;
   char *token;

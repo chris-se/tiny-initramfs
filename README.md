@@ -6,6 +6,8 @@ implementation for booting Linux systems. It has nearly no features,
 but is very small and very fast. It is written purely in C, but uses
 only parts of the standard library.
 
+There are three primary use cases:
+
  * It is designed for systems where an initramfs is typically not
    necessary (block device drivers + root file system compiled into the
    kernel, no  separate /usr file system), but where an initramfs is
@@ -13,6 +15,7 @@ only parts of the standard library.
    initramfs, which is larger (more time spent in the boot loader
    loading it) and slower (because it does more), `tiny-initramfs` will
    add next to no overhead.
+ * In cases where `UUID`-based boot is wanted not a full initramfs.
  * In systems with a split `/usr` file system, it is necessary to mount
    that in the initramfs already, else subtle problems may occur. If
    `/usr` resides on a simple block device already known to the kernel
@@ -25,17 +28,19 @@ Features
 
  * Simplicity: the implementation is really simple and very linear.
    It's most likely easier to understand than other initramfs
-   implementations. The entire program is less than 1000 LoC, and that
+   implementations. The entire program is less than 1400 LoC, and that
    includes the License headers in the files.
  * Size: the implementation is really small (see below).
  * Speed: there is no noticeable performance penalty, because very
    little is done before execution is handed over to the operating
    system proper.
- * Supports mounting the `/` file system for kernel-named devices, for
-   example `root=/dev/sda1`.
+ * Supports kernel-named devices, for example `root=/dev/sda1`.
+ * Supports `root=0xMAJMIN`.
+ * Supports `root=UUID=...` for ext2, ext3, ext4, xfs and btrfs.
  * Supports parsing `/etc/fstab` to determine if a separate `/usr`
-   partition exists and mounting that - as long as the entry there also
-   specifies a kernel-named device as the source.
+   partition exists and mounting that - as long as the entry there
+   follows the same rule as the `root=` parameter (kernel device name,
+   or `UUID=` entry for a select number of filesystems).
  * Supports the `root=`, `rootflags=`, `rootfstype=`, `rootdelay=`,
    `rootwait`, `ro`, `rw` and `init=` parameters.
  * Default timeout of 180 seconds to wait for the root device to appear
@@ -50,11 +55,11 @@ have the following size for different libcs tested:
 
 | libc implementation | `initrd.img` size (bytes) |
 | ------------------- | -------------------------:|
-| musl 1.1.5          |                     11272 |
-| dietlibc 0.33       |                      9397 |
-| glibc 2.19          |                    323688 |
+| musl 1.1.5          |                     13132 |
+| dietlibc 0.33       |                     11065 |
+| glibc 2.19          |                    324893 |
 
-The size of an initramfs using `tiny-initramfs` is thus about 10 KiB if
+The size of an initramfs using `tiny-initramfs` is thus about 12 KiB if
 one doesn't use glibc.
 
 Requirements
@@ -72,20 +77,24 @@ Requirements
 When not to use
 ---------------
 
- * `tiny-initramfs` does not support `UUID=` nor `PARTUUID=` for
-   mounting the root or `/usr` file systems. It also doesn't support
-   symlinks created by udev (such as `/dev/disk/by-label/...`). Only
-   the kernel names themselves, such as `/dev/sda1` are supported.
+ * `tiny-initramfs` does not support `PARTUUID=` for mounting the root
+   or `/usr` file systems. It also doesn't support symlinks created by
+   udev (such as `/dev/disk/by-label/...`). Only the kernel names
+   themselves, such as `/dev/sda1`, as well as `UUID=` and hexadecimal
+   device numbers (`0xMAJMIN`, e.g. `0x801`) are supported.
  * No modules can be loaded in the initramfs, everything that's
    required needs to be compiled in.
  * `/` or `/usr` on network file systems are currently not supported.
- * Booting from USB storage is not recommended, because the device
-   names aren't stable. (It could work regardless if there is only one
-   USB storage device attached at all times.)
+ * When booting from USB storage you should always use `UUID=`, because
+   device names are not necessarily stable.
  * `/usr` on a FUSE file system, as they require user space helpers
    running to be able to mount. Generally speaking, any file system
    that can't be mounted with just a trivial `mount` syscall, but
    requires a userspace helper, will not work.
+ * Any complex storage setup, such as LVM, encryption, iSCSI, etc.
+   Basically, only things that the kernel provides devices for out of
+   the box (potentially with additional kernel parameters) is
+   supported.
 
 If your setup falls into one of these cases, please use a full
 initramfs instead of `tiny-initramfs`. It is not meant to replace
@@ -125,8 +134,17 @@ Caveats
    are overlay-type file systems for `/` and/or if something has to be
    done prior to mounting these file systems (such as creating a
    directory, or mounting an additional tmpfs or similar).
- * Old-style `root=MAJ:MIN` is currently not supported, but on the TODO
-   list.
+ * Booting from kernel-assembled RAID arrays (via `md=...`) should
+   work, but is untested. Don't combine this with `UUID=`, though, as
+   `tiny-initrd` currently does not check if a block device has array
+   metadata, so it could falsely identify a member device (instead of
+   the entire array) when using `UUID=` in some cases. But for arrays
+   that are assembled by the kernel via `md=...` the device name is
+   known anyway (typically `/dev/md0`), so this shouldn't be an issue.
+ * While this is supposed to be portable, this has only been tested on
+   x86_64 (amd64). Since low-level kernel syscalls are performed, there
+   may be some issues on other architectures. Please report those if
+   they are present.
 
 HOWTO
 -----
@@ -201,6 +219,9 @@ repeated), to the point where further reduction would likely sacrifice
 the readability of the code. Execution speed is achieved by doing very
 little, not by micro-optimizing algorithms.
 
+Of course, changes that reduce the current code size even further (as
+long as the code remains readable) are very welcome.
+
 Future features
 ---------------
 
@@ -218,16 +239,17 @@ interesting regardless:
    the `mount` syscall with a special data structure as the `data`
    parameter - which does not appear to be much more complex than what
    is currently implemented.
- * Support `UUID=` for the most common file systems: it shouldn't be
-   too hard to go through all partitions and extract the UUIDs for at
-   least the major file system types, basically just ext4, xfs and
-   btrfs. (Open the block device, seek to position, verify that we know
-   the file system type, seek to other position, read 16 bytes, close
-   device.)
+ * Support `UUID=` for more filesystems, as long as they are really
+   simple. Currently, the implementation checks the magic bytes of a
+   given file system on the each device, and then compares the UUID at
+   the right position in the file system metadata. (See `devices.c` for
+   details on how this is implemented for the currently supported file
+   systems.)
 
-If any of these features should be implemented, depending on by how
-much they increase the initramfs image size, they might be made
-compile-time optional. The cutoff will be around 15 KiB on x86_64 (so
-that it should be less than 16 KiB on all architectures), anything that
-keeps the image size smaller than that will still be considered
-acceptable.
+Note that the goal is to keep the `initrd.img` size smaller than 16 KiB
+on all plattforms, so a cutoff of 15 KiB is used on x86_64, to leave
+room for different assembly code sizes etc.
+
+Implementing any new feature should not make the image size larger than
+this - and if that isn't possible, these types of features should then
+be compile-time optional.

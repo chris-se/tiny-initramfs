@@ -88,7 +88,7 @@ int process_fstab_entry(fstab_find_fs_data *data, const char *orig_line, int lin
   if (strcmp(fields[1], data->dest) != 0)
     return 0;
 
-  if (strncmp(fields[0], "/dev/", 5) != 0)
+  if (!is_valid_device_name(fields[0], NULL, NULL, NULL, NULL))
     return -ENODEV;
 
   /* NOTE: for the /usr use casee this is sufficient, but in general
