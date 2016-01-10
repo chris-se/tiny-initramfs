@@ -48,6 +48,10 @@
 #define PROC_CMDLINE_FILENAME     "/proc/cmdline"
 #endif
 
+#ifndef PROC_NET_PNP_FILENAME
+#define PROC_NET_PNP_FILENAME     "/proc/net/pnp"
+#endif
+
 #ifndef KMSG_FILENAME
 #define KMSG_FILENAME             "/dev/ksmg"
 #endif
@@ -80,6 +84,10 @@
 #define DEVICE_POLL_MSEC           50
 #endif
 
+#ifndef DEFAULT_ROOTFS_NFS_DIR
+#define DEFAULT_ROOTFS_NFS_DIR     "@@/tftpboot/%s@@"
+#endif
+
 /* Not all alternative libc implementations support these constants yet. */
 #ifndef O_CLOEXEC
 #define O_CLOEXEC                  02000000
@@ -101,7 +109,7 @@ typedef struct fstab_info {
 int fstab_find_fs(const char *dest, fstab_info *info);
 
 /* mount.c */
-int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char *option_string);
+int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char *option_string, int *nfsver);
 int mount_filesystem(const char *source, const char *target, const char *type, const char *flags, int override_flags_add, int override_flags_subtract);
 
 /* log.c */
@@ -118,5 +126,12 @@ void wait_for_device(char *real_device_name /* MAX_PATH_LEN bytes */, int *timeo
 int scan_devices(char *device_name /* MAX_PATH_LEN bytes */, int type, unsigned int maj, unsigned int min, const char *uuid /* 16 bytes */);
 int parse_uuid(char *uuid_buf /* 16 bytes */, const char *string_representation);
 int is_valid_device_name(const char *device_name, int *type, unsigned int* major, unsigned int *minor, char *uuid /* 16 bytes */);
+
+/* util.c */
+void append_to_buf(char *buf, size_t size, ...);
+void set_buf(char *buf, size_t size, ...);
+
+/* nfs.c */
+int mount_nfs4(const char *source, const char *target, int mount_flags, const char *nfs_options);
 
 #endif /* !defined(TINY_INITRAMFS_H) */

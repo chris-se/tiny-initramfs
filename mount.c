@@ -19,6 +19,7 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 #include <sys/mount.h>
 #include <errno.h>
 
@@ -35,11 +36,38 @@ int mount_filesystem(const char *source, const char *target,
 {
   int options;
   char data[MAX_LINE_LEN];
-  options = parse_mount_options(data, MAX_LINE_LEN, flags);
+  int nfsver = -1;
   int rc = -1;
+
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[----] mount_filesystem(\"", source, "\", \"", target, "\", \"", type ? type : "(null)", "\", \"", flags, "\", ...): start", NULL);
+#endif
+
+  if (type && (!strcmp(type, "nfs") || !strcmp(type, "nfs4")))
+    nfsver = !strcmp(type, "nfs4") ? 4 : 0;
+  options = parse_mount_options(data, MAX_LINE_LEN, flags, nfsver != -1 ? &nfsver : NULL);
+
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[----] mount_filesystem: parsing mount options (done), unparsed options: ", data, NULL);
+#endif
 
   options |= override_flags_add;
   options &= ~override_flags_subtract;
+
+  if (type && !strcmp(type, "nfs4") && nfsver != 4)
+    panic(0, LOG_PREFIX, "Cannot combine [nfs]vers=2/3 option with filesystem type nfs4.", NULL);
+  if (type && (!strcmp(type, "nfs") || !strcmp(type, "nfs4"))) {
+    if (nfsver != 4 && nfsver != 0)
+      panic(0, LOG_PREFIX, "Sorry, only NFSv4 is currently supported.", NULL);
+    /* Note that nfsver == 0 means we have type == nfs and no vers= parameter
+     * at this point - which means that in principle we should try first NFSv4
+     * and then NFSv3/2. But until we support NFSv3, we'll just do NFSv4. */
+    return mount_nfs4(source, target, options, data);
+  }
+
+#ifdef DEBUG_INITRAMFS
+  warn(LOG_PREFIX, "[----] mount_filesystem: not NFS", NULL);
+#endif
 
   /* We need to loop through filesystem types as the kernel doesn't do
    * that for us if we call mount(). libmount does something similar,
@@ -71,7 +99,7 @@ int mount_filesystem(const char *source, const char *target,
 #define HAS_R_VARIANT    0x04
 #define IGNORE           0x80
 
-int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char *option_string)
+int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char *option_string, int *nfsver)
 {
   typedef struct {
     const char *name;
@@ -152,7 +180,7 @@ int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char 
   int bits_to_change;
   int invert;
 
-  strncpy(opts, option_string, MAX_LINE_LEN - 1);
+  set_buf(opts, MAX_LINE_LEN, option_string, NULL);
   memset(syscall_data, 0, syscall_data_len);
 
   for (token = strtok_r(opts, ",", &saveptr); token != NULL; token = strtok_r(NULL, ",", &saveptr)) {
@@ -207,14 +235,25 @@ int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char 
       else
         bits |= bits_to_change;
     } else {
-      if (*syscall_data) {
-        strncat(syscall_data, ",", syscall_data_len - 1);
-        strncat(syscall_data, token, syscall_data_len - 2);
-        syscall_data_len -= strlen(token) + 1;
-      } else {
-        strncpy(syscall_data, token, syscall_data_len - 1);
-        syscall_data_len -= strlen(token);
+      /* Hack to handle fstype = nfs with vers = number, so we can
+       * determine the NFS version and dispatch accordingly. nfsver
+       * should only be non-NULL if the fstype is "nfs". */
+      if (nfsver && *nfsver > -1 && (strncmp(token, "vers=", 5) == 0 || strncmp(token, "nfsvers=", 8) == 0)) {
+        char *endptr = NULL;
+        char *eq = strchr(token, '=') + 1;
+        long val;
+        if (!*eq)
+          panic(0, LOG_PREFIX, "Empty NFS version specified.", NULL);
+        val = strtol(eq, &endptr, 10);
+        if (!endptr || !*endptr)
+          panic(0, LOG_PREFIX, "Invalid NFS version specified: ", eq, NULL);
+        if (val != 2 && val != 3 && val != 4)
+          panic(0, LOG_PREFIX, "Invalid NFS version specified: ", eq, NULL);
+        *nfsver = (int)val;
+        continue;
       }
+
+      append_to_buf(syscall_data, syscall_data_len, *syscall_data ? "," : "", token, NULL);
     }
   }
 
@@ -250,6 +289,6 @@ int process_proc_filesystems(void *data, const char *line, int line_is_incomplet
          NULL);
     return 0;
   }
-  strncpy(supported_filesystems[supported_filesystems_count++], line, MAX_FILESYSTEM_TYPE_LEN - 1);
+  set_buf(supported_filesystems[supported_filesystems_count++], MAX_FILESYSTEM_TYPE_LEN, line, NULL);
   return 0;
 }

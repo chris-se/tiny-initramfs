@@ -71,7 +71,7 @@ int process_fstab_entry(fstab_find_fs_data *data, const char *orig_line, int lin
   if (!had_nws)
     return 0;
 
-  strncpy(line, orig_line, MAX_LINE_LEN - 1);
+  set_buf(line, MAX_LINE_LEN, orig_line, NULL);
 
   i = 0;
   for (token = strtok_r(line, " \t", &saveptr); token != NULL; token = strtok_r(NULL, " \t", &saveptr)) {
@@ -88,17 +88,19 @@ int process_fstab_entry(fstab_find_fs_data *data, const char *orig_line, int lin
   if (strcmp(fields[1], data->dest) != 0)
     return 0;
 
-  if (!is_valid_device_name(fields[0], NULL, NULL, NULL, NULL))
-    return -ENODEV;
+  if (strcmp(fields[2], "nfs") != 0 && strcmp(fields[2], "nfs4") != 0) {
+    if (!is_valid_device_name(fields[0], NULL, NULL, NULL, NULL))
+      return -ENODEV;
+  }
 
   /* NOTE: for the /usr use casee this is sufficient, but in general
    *       one needs to de-escape the source and dest fields, see e.g.
    *       the fstab-decode utility.
    */
-  strncpy(data->info->source, fields[0], MAX_PATH_LEN - 1);
-  strncpy(data->info->dest, fields[1], MAX_PATH_LEN - 1);
-  strncpy(data->info->type, fields[2], MAX_PATH_LEN - 1);
-  strncpy(data->info->options, fields[3], MAX_LINE_LEN - 1);
+  set_buf(data->info->source, MAX_PATH_LEN, fields[0], NULL);
+  set_buf(data->info->dest, MAX_PATH_LEN, fields[1], NULL);
+  set_buf(data->info->type, MAX_PATH_LEN, fields[2], NULL);
+  set_buf(data->info->options, MAX_LINE_LEN, fields[3], NULL);
   data->info->dump = strtoul(fields[4], NULL, 10);
   data->info->pass = strtoul(fields[5], NULL, 10);
   data->found = 1;

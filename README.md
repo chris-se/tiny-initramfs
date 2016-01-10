@@ -26,6 +26,8 @@ There are three primary use cases:
 Features
 --------
 
+**FIXME: Update # of LoC, update initrd.img sizes.**
+
  * Simplicity: the implementation is really simple and very linear.
    It's most likely easier to understand than other initramfs
    implementations. The entire program is less than 1400 LoC, and that
@@ -47,19 +49,26 @@ Features
    (starts after the `rootdelay=` delay is over), after which a kernel
    panic is caused; if `rootwait` is specified it will wait
    indefinitely. (Recompilation is necessary for a larger timeout.)
+ * Supports mounting NFSv4 file systems with `sec=sys` that do **not**
+   use the idampper, i.e. use raw UIDs/GIDs. For the `/usr` file system
+   the standard `/etc/fstab` entries are interpreted, for the root file
+   system one should use `root=/dev/nfs` and the `nfsroot=` parameter
+   (as documented in the kernel documentation). The network
+   configuration needs to be specified via the `ip=` kernel command
+   line parameter.
 
-On an x86_64 system with the default `-O2 -fstack-protector=strong`
+On a x86_64 system with the default `-O2 -fstack-protector=strong`
 compiler flags, statically linked with the binary stripped, and the
 resulting initramfs compressed with default `gzip`, the images produced
 have the following size for different libcs tested:
 
 | libc implementation | `initrd.img` size (bytes) |
 | ------------------- | -------------------------:|
-| musl 1.1.5          |                     13132 |
-| dietlibc 0.33       |                     11065 |
+| musl 1.1.5          |                     16250 |
+| dietlibc 0.33       |                     13670 |
 | glibc 2.19          |                    324893 |
 
-The size of an initramfs using `tiny-initramfs` is thus about 12 KiB if
+The size of an initramfs using `tiny-initramfs` is thus about 16 KiB if
 one doesn't use glibc.
 
 Requirements
@@ -73,6 +82,11 @@ Requirements
  * The kernel must have `CONFIG_DEVTMPFS` built-in, because this
    implementation assumes the kernel will just create the devices by
    itself. (This is true for most distribution kernels.)
+ * NFSv4 requires at least kernel 3.5 on both server and client (in
+   order for raw UIDs/GIDs to work) and requires built-in kernel
+   support for network autoconfiguration (`CONFIG_IP_PNP` and for DHCP
+   support also `CONFIG_IP_PNP_DHCP`) as well as built-in kernel
+   support for NFSv4 (`CONFIG_NFS_FS` as well as `CONFIG_NFS_V4`).
 
 When not to use
 ---------------
@@ -84,7 +98,7 @@ When not to use
    device numbers (`0xMAJMIN`, e.g. `0x801`) are supported.
  * No modules can be loaded in the initramfs, everything that's
    required needs to be compiled in.
- * `/` or `/usr` on network file systems are currently not supported.
+ * NFSv2/NFSv3 are currently not supported.
  * When booting from USB storage you should always use `UUID=`, because
    device names are not necessarily stable.
  * `/usr` on a FUSE file system, as they require user space helpers
@@ -141,6 +155,8 @@ Caveats
    the entire array) when using `UUID=` in some cases. But for arrays
    that are assembled by the kernel via `md=...` the device name is
    known anyway (typically `/dev/md0`), so this shouldn't be an issue.
+ * NFS support is not thoroughly tested.
+ * Host names are unsupported for NFS mounts, only IP addresses work.
  * While this is supposed to be portable, this has only been tested on
    x86_64 (amd64). Since low-level kernel syscalls are performed, there
    may be some issues on other architectures. Please report those if
@@ -219,6 +235,13 @@ repeated), to the point where further reduction would likely sacrifice
 the readability of the code. Execution speed is achieved by doing very
 little, not by micro-optimizing algorithms.
 
+Some times it is necessary to reimplement certain libc functios because
+using the libc variants increase the image size too much. For example,
+using `inet_ntoa` and `inet_aton` (to convert between ASCII to binary
+representations of IP addresses) from the musl C library will cause
+initramfs images (after compression) to be an additional 5 KiB larger
+as compared to the own implementation.
+
 Of course, changes that reduce the current code size even further (as
 long as the code remains readable) are very welcome.
 
@@ -232,19 +255,19 @@ initramfs. If you need advanced features, please use an already
 existing solution. That said, there are two things that might be
 interesting regardless:
 
- * Some minimalistic network file system support for very simple cases,
-   if it is possible to let the kernel do all the network configuration
-   even if an initramfs is used. For example, mounting an NFSv3 (or
-   non-idmapped NFSv4 `sec=sys`) file system only consists of calling
-   the `mount` syscall with a special data structure as the `data`
-   parameter - which does not appear to be much more complex than what
-   is currently implemented.
+ * Minimalistic NFSv2/3 mounting support (akin to the current NFSv4
+   code).
+ * Maybe support host name lookups for NFS mounts? (Probably not going
+   to happen, as an own DNS resolver will likely increase the image
+   size by too much - and is likely going to be rather complicated.)
  * Support `UUID=` for more filesystems, as long as they are really
    simple. Currently, the implementation checks the magic bytes of a
    given file system on the each device, and then compares the UUID at
    the right position in the file system metadata. (See `devices.c` for
    details on how this is implemented for the currently supported file
    systems.)
+ * Support for excluding MD/RAID/... devices when probing for UUIDs of
+   file systems.
 
 Note that the goal is to keep the `initrd.img` size smaller than 16 KiB
 on all plattforms, so a cutoff of 15 KiB is used on x86_64, to leave
@@ -253,3 +276,11 @@ room for different assembly code sizes etc.
 Implementing any new feature should not make the image size larger than
 this - and if that isn't possible, these types of features should then
 be compile-time optional.
+
+TODO
+----
+
+ * autotools or cmake based build system.
+ * clean up the code a bit.
+ * go through all messages printed and make sure they are uniform in
+   style

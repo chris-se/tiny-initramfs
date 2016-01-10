@@ -17,7 +17,7 @@ GZIP=gzip
 
 all: tiny_initramfs
 
-tiny_initramfs: tiny_initramfs.o io.o fstab.o mount.o log.o devices.o
+tiny_initramfs: tiny_initramfs.o io.o fstab.o mount.o log.o devices.o nfs.o util.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 initrd.img: tiny_initramfs

@@ -119,7 +119,7 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
   start = tv.tv_sec;
 
   if (type == WANT_NAME) {
-    strncpy(real_device_name, device, MAX_PATH_LEN - 1);
+    set_buf(real_device_name, MAX_PATH_LEN, device, NULL);
     have_device = access(device, F_OK) != 0;
   } else {
     have_device = scan_devices(real_device_name, type, major, minor, uuid);
@@ -205,8 +205,7 @@ int scan_devices(char *device_name /* MAX_PATH_LEN bytes */, int type, unsigned 
 
     for (bpos = 0; bpos < nread; ) {
       d = (struct linux_dirent *)(buf + bpos);
-      strncpy(fn_buf, "/dev/", MAX_PATH_LEN - 1);
-      strncat(fn_buf, d->d_name, MAX_PATH_LEN - 1 - 5);
+      set_buf(fn_buf, MAX_PATH_LEN, "/dev/", d->d_name, NULL);
       if (strcmp(d->d_name, ".") != 0 &&
           strcmp(d->d_name, "..") != 0 &&
           (d->d_type == DT_UNKNOWN || type == WANT_MAJMIN)) {
@@ -221,13 +220,13 @@ int scan_devices(char *device_name /* MAX_PATH_LEN bytes */, int type, unsigned 
         /* See if we found the device we want... */
         if (type == WANT_MAJMIN) {
           if (major(st.st_rdev) == maj && minor(st.st_rdev) == min) {
-            strncpy(device_name, fn_buf, MAX_PATH_LEN - 1);
+            set_buf(device_name, MAX_PATH_LEN, fn_buf, NULL);
             close(dirfd);
             return 0;
           }
         } else if (type == WANT_UUID) {
           if (is_fs_with_uuid(fn_buf, uuid)) {
-            strncpy(device_name, fn_buf, MAX_PATH_LEN - 1);
+            set_buf(device_name, MAX_PATH_LEN, fn_buf, NULL);
             close(dirfd);
             return 0;
           }
@@ -264,7 +263,7 @@ int is_valid_device_name(const char *device_name, int *type, unsigned int* major
 
   /* 0x803 or so for 8:3 */
   if (device_name[0] == '0' && device_name[1] == 'x') {
-    x = strtoul(device_name, &endptr, 16);
+    x = strtoul(device_name + 2, &endptr, 16);
     if (endptr && !*endptr) {
       if (type)
         *type = WANT_MAJMIN;
@@ -278,17 +277,13 @@ int is_valid_device_name(const char *device_name, int *type, unsigned int* major
   }
 
   if (strncmp(device_name, "UUID=", 5) == 0) {
+    char c;
+
     device_name += 5;
-    if (*device_name == '"') {
+    c = *device_name;
+    if (c == '"' || c == '\'') {
       ++device_name;
-      if (device_name[strlen(device_name)-1] != '"')
-        return 0;
-      if (strlen(device_name) > 32 + 4 + 1)
-        return 0;
-      strncpy(uuid_buf, device_name, 32 + 4);
-    } else if (*device_name == '\'') {
-      ++device_name;
-      if (device_name[strlen(device_name)-1] != '\'')
+      if (device_name[strlen(device_name)-1] != c)
         return 0;
       if (strlen(device_name) > 32 + 4 + 1)
         return 0;
@@ -309,7 +304,7 @@ int is_valid_device_name(const char *device_name, int *type, unsigned int* major
   return 0;
 }
 
-inline int hexbyte(char c)
+int hexbyte(char c)
 {
   if (c >= '0' && c <= '9')
     return c - '0';
@@ -346,6 +341,7 @@ int is_blockdev_excluded(const char *device_name)
   };
   dev_match_t *ptr;
   size_t l = strlen(device_name);
+  size_t k;
   int matched;
 
   for (ptr = exclude_devices; ptr->prefix || ptr->suffix; ptr++) {
@@ -355,7 +351,8 @@ int is_blockdev_excluded(const char *device_name)
         matched = 0;
     }
     if (ptr->suffix) {
-      if (l < strlen(ptr->suffix) || strncmp(&device_name[l - strlen(ptr->suffix)], ptr->suffix, strlen(ptr->suffix)) != 0)
+      k = strlen(ptr->suffix);
+      if (l < k || strncmp(&device_name[l - k], ptr->suffix, k) != 0)
         matched = 0;
     }
     if (matched)
@@ -423,7 +420,7 @@ int is_ext234_with_uuid(const char *device_name, const char *uuid_buf)
   if (r < 0 || r > 0)
     return 0;
 
-  return (buf[0x38] == (char)0x53 && buf[0x39] == (char)0xEF)
+  return memcmp(&buf[0x38], "\x53\xef", 2) == 0
       && memcmp(&buf[0x68], uuid_buf, 16) == 0;
 }
 
@@ -436,7 +433,7 @@ int is_xfs_with_uuid(const char *device_name, const char *uuid_buf)
   if (r < 0 || r > 0)
     return 0;
 
-  return (buf[0x0] == 'X' && buf[0x1] == 'F' && buf[0x2] == 'S' && buf[0x3] == 'B')
+  return memcmp(&buf[0x00], "XFSB", 4) == 0
       && memcmp(&buf[0x20], uuid_buf, 16) == 0;
 }
 
