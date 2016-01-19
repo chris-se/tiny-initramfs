@@ -94,9 +94,8 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
    * do a very simple and stupid polling loop to wait until the
    * requested device is present. This could be improved a bit,
    * but for now it's good enough. */
-  time_t start;
-  struct timeval tv;
-  int r, have_device;
+  time_t start, current;
+  int have_device;
   static int have_shown_message_timeout;
   int type;
   unsigned int major, minor;
@@ -104,19 +103,13 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
 
   /* Parse device information */
   if (!is_valid_device_name(device, &type, &major, &minor, uuid))
-    panic(0, LOG_PREFIX, "Unsupported device specified: ", device, NULL);
+    panic(0, "Unsupported device specified: ", device, NULL);
 
-  if (delay) {
-    struct timespec req = { delay, 0 };
-    struct timespec rem;
-    (void)nanosleep(&req, &rem);
-  }
+  if (delay)
+    (void)sleep(delay);
 
   /* Our timeout starts *after* the rootdelay. */
-  r = gettimeofday(&tv, NULL);
-  if (r < 0)
-    panic(errno, LOG_PREFIX, "Couldn't determine current time for timeout", NULL);
-  start = tv.tv_sec;
+  start = time(NULL);
 
   if (type == WANT_NAME) {
     set_buf(real_device_name, MAX_PATH_LEN, device, NULL);
@@ -126,17 +119,15 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
   }
 
   while (have_device) {
-    r = gettimeofday(&tv, NULL);
-    if (r < 0)
-      panic(errno, LOG_PREFIX, "Couldn't determine current time for timeout", NULL);
-    if (*timeout > 0 && tv.tv_sec - start > *timeout)
-      panic(0, LOG_PREFIX, "Timeout while waiting for devices for / (and possibly /usr) filesystems to appear "
-                           "(did you specify the correct ones?)", NULL);
+    current = time(NULL);
+    if (*timeout > 0 && current - start > *timeout)
+      panic(0, "Timeout while waiting for devices for / (and possibly /usr) filesystems to appear "
+               "(did you specify the correct ones?)", NULL);
     /* In case this takes longer, show a nice message so the user has SOME
      * idea of what's going on here. */
-    if (tv.tv_sec - start > DEVICE_MESSAGE_TIMEOUT && !have_shown_message_timeout) {
+    if (current - start > DEVICE_MESSAGE_TIMEOUT && !have_shown_message_timeout) {
       have_shown_message_timeout = 1;
-      warn(LOG_PREFIX, "Waiting for ", device, " to appear...", NULL);
+      warn("Waiting for ", device, " to appear...", NULL);
     }
     /* Sleep for DEVICE_POLL_MSEC milliseconds, then poll again. */
     struct timespec req = { 0, DEVICE_POLL_MSEC * 1000 * 1000 };
@@ -152,10 +143,8 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
   /* Make sure we record how many seconds on the timeout are left,
    * because this function may be called again for the /usr filesystem. */
   if (*timeout > 0) {
-    r = gettimeofday(&tv, NULL);
-    if (r < 0)
-      panic(errno, LOG_PREFIX, "Couldn't determine current time for timeout", NULL);
-    *timeout = tv.tv_sec - start;
+    current = time(NULL);
+    *timeout = current - start;
     if (*timeout <= 0)
       *timeout = 1;
   }
@@ -265,12 +254,11 @@ int is_valid_device_name(const char *device_name, int *type, unsigned int* major
   if (device_name[0] == '0' && device_name[1] == 'x') {
     x = strtoul(device_name + 2, &endptr, 16);
     if (endptr && !*endptr) {
-      if (type)
+      if (type) {
         *type = WANT_MAJMIN;
-      if (major)
         *major = (int)(x >> 8);
-      if (minor)
         *minor = (int)(x & 0xff);
+      }
       return 1;
     }
     return 0;

@@ -25,6 +25,22 @@
 
 #include "tiny_initramfs.h"
 
+/* dietlibc doesn't define MS_DIRSYNC for some reason
+ * (probably a bug)
+ */
+#ifndef MS_DIRSYNC
+#define MS_DIRSYNC                   128
+#endif
+
+/* Newer mount flags (last update: 2016-01)
+ * (the rest are supported by both musl and dietlibc, should there be
+ * a C library that doesn't yet contain other flags used, feel free to
+ * add conditional defines here)
+ */
+#ifndef MS_LAZYTIME
+#define MS_LAZYTIME                  (1 << 25)
+#endif
+
 static char supported_filesystems[MAX_SUPPORTED_FILESYSTEMS][MAX_FILESYSTEM_TYPE_LEN];
 static int supported_filesystems_count;
 static void determine_supported_filesystems();
@@ -40,7 +56,7 @@ int mount_filesystem(const char *source, const char *target,
   int rc = -1;
 
 #ifdef DEBUG_INITRAMFS
-  warn(LOG_PREFIX, "[----] mount_filesystem(\"", source, "\", \"", target, "\", \"", type ? type : "(null)", "\", \"", flags, "\", ...): start", NULL);
+  warn("[----] mount_filesystem(\"", source, "\", \"", target, "\", \"", type ? type : "(null)", "\", \"", flags, "\", ...): start", NULL);
 #endif
 
   if (type && (!strcmp(type, "nfs") || !strcmp(type, "nfs4")))
@@ -48,17 +64,17 @@ int mount_filesystem(const char *source, const char *target,
   options = parse_mount_options(data, MAX_LINE_LEN, flags, nfsver != -1 ? &nfsver : NULL);
 
 #ifdef DEBUG_INITRAMFS
-  warn(LOG_PREFIX, "[----] mount_filesystem: parsing mount options (done), unparsed options: ", data, NULL);
+  warn("[----] mount_filesystem: parsing mount options (done), unparsed options: ", data, NULL);
 #endif
 
   options |= override_flags_add;
   options &= ~override_flags_subtract;
 
   if (type && !strcmp(type, "nfs4") && nfsver != 4)
-    panic(0, LOG_PREFIX, "Cannot combine [nfs]vers=2/3 option with filesystem type nfs4.", NULL);
+    panic(0, "Cannot combine [nfs]vers=2/3 option with filesystem type nfs4.", NULL);
   if (type && (!strcmp(type, "nfs") || !strcmp(type, "nfs4"))) {
     if (nfsver != 4 && nfsver != 0)
-      panic(0, LOG_PREFIX, "Sorry, only NFSv4 is currently supported.", NULL);
+      panic(0, "Sorry, only NFSv4 is currently supported.", NULL);
     /* Note that nfsver == 0 means we have type == nfs and no vers= parameter
      * at this point - which means that in principle we should try first NFSv4
      * and then NFSv3/2. But until we support NFSv3, we'll just do NFSv4. */
@@ -66,7 +82,7 @@ int mount_filesystem(const char *source, const char *target,
   }
 
 #ifdef DEBUG_INITRAMFS
-  warn(LOG_PREFIX, "[----] mount_filesystem: not NFS", NULL);
+  warn("[----] mount_filesystem: not NFS", NULL);
 #endif
 
   /* We need to loop through filesystem types as the kernel doesn't do
@@ -78,10 +94,9 @@ int mount_filesystem(const char *source, const char *target,
     determine_supported_filesystems();
 
     errno = EINVAL;
-    for (i = 0; i < supported_filesystems_count; i++) {
+    rc = -1;
+    for (i = 0; rc < 0 && i < supported_filesystems_count; i++) {
       rc = mount(source, target, supported_filesystems[i], options | MS_SILENT, data);
-      if (rc == 0)
-        return 0;
     }
     if (rc < 0)
       return -errno;
@@ -94,91 +109,117 @@ int mount_filesystem(const char *source, const char *target,
   return 0;
 }
 
-#define INVERTED         0x01
-#define HAS_NO_VARIANT   0x02
-#define HAS_R_VARIANT    0x04
-#define IGNORE           0x80
+/* There are precisely 4 bits currently reserved for
+ * kernel mount flags, so reuse them for parsing to
+ * save code space. */
+#define INVERTED         (1U << 28)
+#define HAS_NO_VARIANT   (1U << 29)
+#define HAS_R_VARIANT    (1U << 30)
+#define IGNORE           (1U << 31)
+
+#define FLAG_MASK        ~(INVERTED | HAS_NO_VARIANT | HAS_R_VARIANT | IGNORE)
 
 int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char *option_string, int *nfsver)
 {
-  typedef struct {
-    const char *name;
-    int flags;
-    int extra;
-  } mount_option_t;
-  static mount_option_t option_definitions[] = {
-    { "ro",          MS_RDONLY,          0                         },
-    { "rw",          MS_RDONLY,          INVERTED                  },
-    { "exec",        MS_NOEXEC,          INVERTED | HAS_NO_VARIANT },
-    { "suid",        MS_NOSUID,          INVERTED | HAS_NO_VARIANT },
-    { "dev",         MS_NODEV,           INVERTED | HAS_NO_VARIANT },
-    { "sync",        MS_SYNCHRONOUS,     HAS_NO_VARIANT            },
-#ifdef MS_DIRSYNC
-    { "dirsync",     MS_DIRSYNC,         0                         },
-#endif
-    { "remount",     MS_REMOUNT,         0                         },
-    { "bind",        MS_BIND,            HAS_R_VARIANT             },
-#ifdef MS_NOSUB
-    { "sub",         MS_NOSUB,           INVERTED | HAS_NO_VARIANT },
-#endif
-#ifdef MS_SILENT
-    { "silent",      MS_SILENT,          0                         },
-    { "loud",        MS_SILENT,          INVERTED                  },
-#endif
-#ifdef MS_MANDLOCK
-    { "mand",        MS_MANDLOCK,        HAS_NO_VARIANT            },
-#endif
-    { "atime",       MS_NOATIME,         INVERTED | HAS_NO_VARIANT },
-#ifdef MS_I_VERSION
-    { "iversion",    MS_I_VERSION,       HAS_NO_VARIANT            },
-#endif
-#ifdef MS_NODIRATIME
-    { "diratime",    MS_NODIRATIME,      INVERTED | HAS_NO_VARIANT },
-#endif
-#ifdef MS_RELATIME
-    { "relatime",    MS_RELATIME,        HAS_NO_VARIANT            },
-#endif
-#ifdef MS_STRICTATIME
-    { "strictatime", MS_STRICTATIME,     HAS_NO_VARIANT            },
-#endif
-    { "unbindable",  MS_UNBINDABLE,      HAS_R_VARIANT             },
-    { "private",     MS_PRIVATE,         HAS_R_VARIANT             },
-    { "slave",       MS_SLAVE,           HAS_R_VARIANT             },
-    { "shared",      MS_SHARED,          HAS_R_VARIANT             },
-    { "defaults",    0,                  0                         },
+  /* This is not very readable, but it will save quite
+   * bit of space in the resulting binary... */
+  static const char *mount_option_names =
+    /*  0 */ "ro\0"
+             "rw\0"
+             "exec\0"
+             "suid\0"
+             "dev\0"
+             "sync\0"
+             "dirsync\0"
+             "remount\0"
+             "bind\0"
+             "silent\0"
+    /* 10 */ "loud\0"
+             "mand\0"
+             "atime\0"
+             "iversion\0"
+             "diratime\0"
+             "relatime\0"
+             "strictatime\0"
+             "unbindable\0"
+             "private\0"
+             "slave\0"
+    /* 20 */ "shared\0"
+             "defaults\0"
     /* NOTE: We ignore all of these for now, but if a filesystem we
      *       want to mount really has these options set in /etc/fstab,
      *       it's not clear that that is the right thing to do...
      *       (Most of them don't make sense for /usr anyway, and we
      *       don't support loop devices.)
      */
-    { "_netdev",     0,                  IGNORE                    },
-    { "auto",        0,                  HAS_NO_VARIANT | IGNORE   },
-    { "user=",       0,                  HAS_NO_VARIANT | IGNORE   },
-    { "users",       0,                  HAS_NO_VARIANT | IGNORE   },
-    { "owner",       0,                  HAS_NO_VARIANT | IGNORE   },
-    { "group",       0,                  HAS_NO_VARIANT | IGNORE   },
-    { "comment=",    0,                  IGNORE                    },
-    { "loop=",       0,                  IGNORE                    },
-    { "offset=",     0,                  IGNORE                    },
-    { "sizelimit=",  0,                  IGNORE                    },
-    { "encryption=", 0,                  IGNORE                    },
-    { "nofail",      0,                  IGNORE                    },
-    { "uhelper=",    0,                  IGNORE                    },
-    { "helper=",     0,                  IGNORE                    },
-    { NULL,          0,                  0                         }
+             "_netdev\0"
+             "auto\0"
+             "user=\0"
+             "users\0"
+             "owner\0"
+             "group\0"
+             "comment=\0"
+             "loop=\0"
+    /* 30 */ "offset=\0"
+             "sizelimit=\0"
+             "encryption=\0"
+             "nofail\0"
+             "uhelper=\0"
+             "helper=\0"
+  ;
+  static const unsigned int mount_option_flags[] = {
+    /*  0 */ 0                         | MS_RDONLY,
+             INVERTED                  | MS_RDONLY,
+             INVERTED | HAS_NO_VARIANT | MS_NOEXEC,
+             INVERTED | HAS_NO_VARIANT | MS_NOSUID,
+             INVERTED | HAS_NO_VARIANT | MS_NODEV,
+             HAS_NO_VARIANT            | MS_SYNCHRONOUS,
+             0                         | MS_DIRSYNC,
+             0                         | MS_REMOUNT,
+             HAS_R_VARIANT             | MS_BIND,
+             0                         | MS_SILENT,
+    /* 10 */ INVERTED                  | MS_SILENT,
+             HAS_NO_VARIANT            | MS_MANDLOCK,
+             INVERTED | HAS_NO_VARIANT | MS_NOATIME,
+             HAS_NO_VARIANT            | MS_I_VERSION,
+             INVERTED | HAS_NO_VARIANT | MS_NODIRATIME,
+             HAS_NO_VARIANT            | MS_RELATIME,
+             HAS_NO_VARIANT            | MS_STRICTATIME,
+             HAS_R_VARIANT             | MS_UNBINDABLE,
+             HAS_R_VARIANT             | MS_PRIVATE,
+             HAS_R_VARIANT             | MS_SLAVE,
+    /* 20 */ HAS_R_VARIANT             | MS_SHARED,
+             0                         | 0,
+             IGNORE                    | 0,
+             HAS_NO_VARIANT | IGNORE   | 0,
+             HAS_NO_VARIANT | IGNORE   | 0,
+             HAS_NO_VARIANT | IGNORE   | 0,
+             HAS_NO_VARIANT | IGNORE   | 0,
+             HAS_NO_VARIANT | IGNORE   | 0,
+             IGNORE                    | 0,
+             IGNORE                    | 0,
+   /* 30 */  IGNORE                    | 0,
+             IGNORE                    | 0,
+             IGNORE                    | 0,
+             IGNORE                    | 0,
+             IGNORE                    | 0,
+             IGNORE                    | 0,
+             0                         | 0
   };
-  mount_option_t *optdef, *this_optdef;
+
   char opts[MAX_LINE_LEN] = { 0 };
   char *saveptr;
   char *token;
   char *check;
   int bits = 0;
-  size_t opt_name_len;
   int had_variant;
   int applies;
   int bits_to_change;
   int invert;
+  const char *opt_name;
+  size_t opt_name_len;
+  int opt_index, this_opt_index;
+  int opt_flag = 0;
 
   set_buf(opts, MAX_LINE_LEN, option_string, NULL);
   memset(syscall_data, 0, syscall_data_len);
@@ -188,26 +229,28 @@ int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char 
     if (token[0] == 'x' && token[1] == '-')
       continue;
 
-    this_optdef = NULL;
+    this_opt_index = -1;
     had_variant = 0;
-    for (optdef = option_definitions; optdef->name; optdef++) {
-      opt_name_len = strlen(optdef->name);
+    for (opt_index = 0, opt_name = mount_option_names, opt_name_len = strlen(opt_name);
+         *opt_name;
+         ++opt_index, opt_name += opt_name_len + 1, opt_name_len = strlen(opt_name))
+    {
       had_variant = 0;
       check = token;
-      if (optdef->extra & HAS_NO_VARIANT && strncmp(token, "no", 2) == 0) {
+      if (mount_option_flags[opt_index] & HAS_NO_VARIANT && strncmp(token, "no", 2) == 0) {
         had_variant = HAS_NO_VARIANT;
         check = token + 2;
-      } else if (optdef->extra & HAS_R_VARIANT && token[0] == 'r') {
+      } else if (mount_option_flags[opt_index] & HAS_R_VARIANT && token[0] == 'r') {
         had_variant = HAS_R_VARIANT;
         check = token + 1;
       }
     recheck_full:
-      if (optdef->name[opt_name_len - 1] == '=') {
-        applies = (strncmp(check, optdef->name, opt_name_len) == 0)
+      if (opt_name[opt_name_len - 1] == '=') {
+        applies = (strncmp(check, opt_name, opt_name_len) == 0)
                || (strlen(check) == opt_name_len - 1 &&
-                   strncmp(check, optdef->name, opt_name_len - 1) == 0);
+                   strncmp(check, opt_name, opt_name_len - 1) == 0);
       } else {
-        applies = strcmp(check, optdef->name) == 0;
+        applies = strcmp(check, opt_name) == 0;
       }
       if (!applies && had_variant) {
         /* just in case an option starts with 'no' or 'r' */
@@ -216,20 +259,20 @@ int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char 
         goto recheck_full;
       }
       if (applies) {
-        this_optdef = optdef;
+        this_opt_index = opt_index;
         break;
       }
     }
 
-    if (this_optdef) {
-      if (this_optdef->extra & IGNORE)
+    if (this_opt_index != -1) {
+      opt_flag = mount_option_flags[this_opt_index];
+      if (opt_flag & IGNORE)
         continue;
-      bits_to_change = this_optdef->flags;
-      if (had_variant & HAS_R_VARIANT)
+      bits_to_change = opt_flag & FLAG_MASK;
+      if (opt_flag & HAS_R_VARIANT)
         bits_to_change |= MS_REC;
-      invert = (this_optdef->extra & INVERTED);
-      if (had_variant & HAS_NO_VARIANT)
-        invert = !invert;
+      /* logical XOR */
+      invert = !(opt_flag & INVERTED) != !(had_variant & HAS_NO_VARIANT);
       if (invert)
         bits &= ~bits_to_change;
       else
@@ -243,12 +286,12 @@ int parse_mount_options(char *syscall_data, size_t syscall_data_len, const char 
         char *eq = strchr(token, '=') + 1;
         long val;
         if (!*eq)
-          panic(0, LOG_PREFIX, "Empty NFS version specified.", NULL);
+          panic(0, "Empty NFS version specified.", NULL);
         val = strtol(eq, &endptr, 10);
         if (!endptr || !*endptr)
-          panic(0, LOG_PREFIX, "Invalid NFS version specified: ", eq, NULL);
+          panic(0, "Invalid NFS version specified: ", eq, NULL);
         if (val != 2 && val != 3 && val != 4)
-          panic(0, LOG_PREFIX, "Invalid NFS version specified: ", eq, NULL);
+          panic(0, "Invalid NFS version specified: ", eq, NULL);
         *nfsver = (int)val;
         continue;
       }
@@ -270,7 +313,7 @@ void determine_supported_filesystems()
 
   r = traverse_file_by_line(PROC_FILESYSTEMS_FILENAME, (traverse_line_t)process_proc_filesystems, NULL);
   if (r < 0)
-    panic(-r, LOG_PREFIX, "could not determine list of kernel-supported filesystems", NULL);
+    panic(-r, "could not determine list of kernel-supported filesystems", NULL);
 }
 
 int process_proc_filesystems(void *data, const char *line, int line_is_incomplete)
@@ -279,13 +322,13 @@ int process_proc_filesystems(void *data, const char *line, int line_is_incomplet
   /* yikes, shouldn't happen */
   if (line_is_incomplete)
     return 0;
-  if (!strncmp(line, "nodev", 5) && (line[5] == ' ' || line[5] == '\t'))
+  if (!strncmp(line, "nodev ", 6) || !strncmp(line, "nodev\t", 6))
     return 0;
   while (line[0] == ' ' || line[0] == '\t')
     ++line;
   if (supported_filesystems_count == MAX_SUPPORTED_FILESYSTEMS) {
-    warn(LOG_PREFIX, "kernel supports too many filesystem types, ignoring some "
-                     "(please specify the rootfstype= kernel parameter if your system doesn't boot because of this)",
+    warn("kernel supports too many filesystem types, ignoring some "
+         "(please specify the rootfstype= kernel parameter if your system doesn't boot because of this)",
          NULL);
     return 0;
   }

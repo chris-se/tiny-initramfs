@@ -68,9 +68,12 @@ int mount_nfs4(const char *source, const char *target,
   typedef struct {
     const char *name;
     int *ptr;
+  } num_opt_def_t;
+
+  typedef struct {
+    const char *name;
     int flag;
-    int inverse;
-  } opt_def_t;
+  } bool_opt_def_t;
 
   char p_options[MAX_LINE_LEN], *token, *saveptr, *opt_val, *endptr;
   long val;
@@ -89,31 +92,33 @@ int mount_nfs4(const char *source, const char *target,
   int dummy;
   int had_warning;
 
-  opt_def_t num_opt_defs[] = {
-    { "rsize",    &data.rsize,    0, 0 },
-    { "wsize",    &data.wsize,    0, 0 },
-    { "timeo",    &data.timeo,    0, 0 },
-    { "retrans",  &data.retrans,  0, 0 },
-    { "acregmin", &data.acregmin, 0, 0 },
-    { "acregmax", &data.acregmax, 0, 0 },
-    { "acdirmin", &data.acdirmin, 0, 0 },
-    { "acdirmax", &data.acdirmax, 0, 0 },
-    { "retry",    &retry,         0, 0 },
-    { "vers",     &dummy,         0, 0 },
-    { NULL,       NULL,           0, 0 }
+  num_opt_def_t num_opt_defs[] = {
+    { "rsize",    &data.rsize    },
+    { "wsize",    &data.wsize    },
+    { "timeo",    &data.timeo    },
+    { "retrans",  &data.retrans  },
+    { "acregmin", &data.acregmin },
+    { "acregmax", &data.acregmax },
+    { "acdirmin", &data.acdirmin },
+    { "acdirmax", &data.acdirmax },
+    { "retry",    &retry         },
+    { "vers",     &dummy         },
+    { NULL,       NULL           }
   };
-  opt_def_t bool_opt_defs[] = {
-    { "bg",          &bg,            0,                   0 },
-    { "fg",          &bg,            0,                   1 },
-    { "soft",        NULL,           NFS4_MOUNT_SOFT,     0 },
-    { "hard",        NULL,           NFS4_MOUNT_SOFT,     1 },
-    { "intr",        NULL,           NFS4_MOUNT_INTR,     0 },
-    { "cto",         NULL,           NFS4_MOUNT_NOCTO,    1 },
-    { "ac",          NULL,           NFS4_MOUNT_NOAC,     1 },
-    { "sharedcache", NULL,           NFS4_MOUNT_UNSHARED, 1 },
-    { NULL,          NULL,           0,                   0 }
+#define INVERTED                0x10000
+  bool_opt_def_t bool_opt_defs[] = {
+    { "bg",          0                              },
+    { "fg",                                INVERTED },
+    { "soft",        NFS4_MOUNT_SOFT                },
+    { "hard",        NFS4_MOUNT_SOFT     | INVERTED },
+    { "intr",        NFS4_MOUNT_INTR                },
+    { "cto",         NFS4_MOUNT_NOCTO    | INVERTED },
+    { "ac",          NFS4_MOUNT_NOAC     | INVERTED },
+    { "sharedcache", NFS4_MOUNT_UNSHARED | INVERTED },
+    { NULL,          0                              }
   };
-  opt_def_t *opt_def;
+  num_opt_def_t *num_opt_def;
+  bool_opt_def_t *bool_opt_def;
 
   set_buf(p_options, MAX_LINE_LEN, nfs_options, NULL);
 
@@ -126,14 +131,14 @@ int mount_nfs4(const char *source, const char *target,
 
   opt_val = strchr((char *)source, ':');
   if (!opt_val)
-    panic(0, LOG_PREFIX, "nfs mount: directory to mount not in host:dir format: ", source, NULL);
+    panic(0, "nfs mount: directory to mount not in host:dir format: ", source, NULL);
   strncpy(hostname, source, MIN(MAX_LINE_LEN - 1, opt_val - source));
   set_buf(mnt_path, MAX_LINE_LEN, opt_val + 1, NULL);
 
   server_addr.sin_family = AF_INET;
   server_addr.sin_port = htons(NFS_PORT);
   if (!small_inet_aton(hostname, &server_addr.sin_addr))
-    panic(0, LOG_PREFIX, "nfs mount: only IP addresses supported for mounting NFS servers, got ", hostname, " instead.", NULL);
+    panic(0, "nfs mount: only IP addresses supported for mounting NFS servers, got ", hostname, " instead.", NULL);
 
   for (token = strtok_r(p_options, ",", &saveptr); token != NULL; token = strtok_r(NULL, ",", &saveptr)) {
     opt_val = strchr(token, '=');
@@ -146,24 +151,24 @@ int mount_nfs4(const char *source, const char *target,
         else if (strcmp(opt_val, "udp") == 0)
           data.proto = IPPROTO_UDP;
         else
-          panic(0, LOG_PREFIX, "nfs mount: invalid proto option specified (valid values are: tcp, udp)", NULL);
+          panic(0, "nfs mount: invalid proto option specified (valid values are: tcp, udp)", NULL);
         continue;
       } else if (strcmp(token, "clientaddr") == 0) {
         /* FIXME */
-        panic(0, LOG_PREFIX, "nfs mount: clientaddr not supported yet", NULL);
+        panic(0, "nfs mount: clientaddr not supported yet", NULL);
       } else if (strcmp(token, "sec") == 0) {
         if (strcmp(opt_val + 1, "sys") != 0)
-          panic(0, LOG_PREFIX, "nfs mount: only sec=sys is supported", NULL);
+          panic(0, "nfs mount: only sec=sys is supported", NULL);
         continue;
       }
 
       if (!*opt_val)
-        panic(0, LOG_PREFIX, "nfs mount: invalid empty option ", token, " specified", NULL);
+        panic(0, "nfs mount: invalid empty option ", token, " specified", NULL);
 
       endptr = NULL;
       val = strtol(opt_val, &endptr, 10);
       if (!endptr || !*endptr)
-        panic(0, LOG_PREFIX, "nfs mount: option ", token, " requires a number, got ", opt_val, " instead.", NULL);
+        panic(0, "nfs mount: option ", token, " requires a number, got ", opt_val, " instead.", NULL);
 
       if (strcmp(token, "port") == 0) {
         server_addr.sin_port = htons((int)val);
@@ -175,14 +180,14 @@ int mount_nfs4(const char *source, const char *target,
         continue;
       }
 
-      for (opt_def = num_opt_defs; opt_def->name; opt_def++) {
-        if (strcmp(token, opt_def->name) == 0) {
-          *opt_def->ptr = (int)val;
+      for (num_opt_def = num_opt_defs; num_opt_def->name; num_opt_def++) {
+        if (strcmp(token, num_opt_def->name) == 0) {
+          *num_opt_def->ptr = (int)val;
           break;
         }
       }
-      if (!opt_def->name)
-        panic(0, LOG_PREFIX, "nfs mount: invalid option ", token, "=", opt_val, NULL);
+      if (!num_opt_def->name)
+        panic(0, "nfs mount: invalid option ", token, "=", opt_val, NULL);
     } else {
       val = 1;
       if (strncmp(token, "no", 2) == 0) {
@@ -191,31 +196,30 @@ int mount_nfs4(const char *source, const char *target,
       } else {
         opt_val = token;
       }
-      for (opt_def = bool_opt_defs; opt_def->name; opt_def++) {
-        if (strcmp(opt_val, opt_def->name) == 0) {
-          if (opt_def->ptr) {
-            if (opt_def->inverse)
-              *opt_def->ptr = !(int)val;
-            else
-              *opt_def->ptr = (int)val;
-          } else {
-            if (opt_def->inverse)
-              val = !val;
+      if (strcmp(opt_val, "bg") == 0) {
+        bg = 1;
+      } else if (strcmp(opt_val, "fg") == 0) {
+        bg = 0;
+      } else {
+        for (bool_opt_def = bool_opt_defs; bool_opt_def->name; bool_opt_def++) {
+          if (strcmp(opt_val, bool_opt_def->name) == 0) {
+            /* != is logical XOR in C */
+            val = val != !!(bool_opt_def->flag & INVERTED);
             if (val)
-              data.flags |= opt_def->flag;
+              data.flags |= (bool_opt_def->flag & NFS4_MOUNT_FLAGMASK);
             else
-              data.flags &= ~opt_def->flag;
+              data.flags &= ~(bool_opt_def->flag & NFS4_MOUNT_FLAGMASK);
+            break;
           }
-          break;
         }
+        if (!bool_opt_def->name)
+          panic(0, "nfs mount: invalid option ", token, NULL);
       }
-      if (!opt_def->name)
-        panic(0, LOG_PREFIX, "nfs mount: invalid option ", token, NULL);
     }
   }
 
   if (bg) {
-    warn(LOG_PREFIX, "nfs mount: background mounts unsupported for / and /usr, defaulting to foreground", NULL);
+    warn("nfs mount: background mounts unsupported for / and /usr, defaulting to foreground", NULL);
     bg = 0;
   }
 
@@ -246,17 +250,16 @@ int mount_nfs4(const char *source, const char *target,
 
     if (time(NULL) >= timeout) {
       if (r < 0 && r != -ETIMEDOUT)
-        panic(r, LOG_PREFIX, "nfs mount: failed to mount ", source, NULL);
+        panic(r, "nfs mount: failed to mount ", source, NULL);
       else
-        panic(0, LOG_PREFIX, "nfs mount: timeout while trying to mount ", source, NULL);
+        panic(0, "nfs mount: timeout while trying to mount ", source, NULL);
     }
 
     if (!had_warning) {
       had_warning = 1;
-      if (r < 0)
-        warn(LOG_PREFIX, "nfs mount: waiting for response from NFS server ", hostname, ": ", strerror(-r), NULL);
-      else
-        warn(LOG_PREFIX, "nfs mount: waiting for response from NFS server ", hostname, ": timeout", NULL);
+      if (r >= 0)
+        r = -ETIMEDOUT;
+      warn("nfs mount: waiting for response from NFS server ", hostname, ": ", strerror(-r), NULL);
     }
 
     /* Wait a bit before retrying, otherwise we will flood the network... */
@@ -321,6 +324,7 @@ int nfs4_ping(int domain, int type, struct sockaddr *dest, socklen_t dest_len, i
   struct pollfd poll_fd;
   int timeout_msec = timeout * 1000;
   int pos = 0;
+  size_t msg_start;
   socklen_t len;
 
   union {
@@ -363,7 +367,9 @@ int nfs4_ping(int domain, int type, struct sockaddr *dest, socklen_t dest_len, i
 
   if (type == SOCK_DGRAM) {
     state = WAIT_FOR_SEND;
+    msg_start = 4;
   } else {
+    msg_start = 0;
     r = connect(sock_fd, dest, dest_len);
     if (r < 0 && errno != EINPROGRESS && errno != EWOULDBLOCK)
       goto error_out;
@@ -388,6 +394,7 @@ int nfs4_ping(int domain, int type, struct sockaddr *dest, socklen_t dest_len, i
         state = WAIT_FOR_SEND;
         break;
       case WAIT_FOR_SEND:
+          /* UDP doesn't have fragment length */
         if (type == SOCK_DGRAM)
           bytes = sendto(sock_fd, nullproc_request + 4, sizeof(nullproc_request) - 4, 0, dest, dest_len);
         else
@@ -402,8 +409,7 @@ int nfs4_ping(int domain, int type, struct sockaddr *dest, socklen_t dest_len, i
         break;
       case WAIT_FOR_RECEIVE:
         if (type == SOCK_DGRAM) {
-          /* Fragment length only available over TCP, so we fake it for UDP */
-          memcpy(nullproc_response, &nullproc_expected_response, 4);
+          /* UDP doesn't have fragment length */
           bytes = recvfrom(sock_fd, nullproc_response + 4, sizeof(nullproc_response) - 4, 0, dest, &dest_len);
           if (bytes != (int)sizeof(nullproc_response) - 4) {
             if (bytes >= 0)
@@ -442,10 +448,10 @@ int nfs4_ping(int domain, int type, struct sockaddr *dest, socklen_t dest_len, i
     return r;
 
   /* Compare the response to the expected response */
-  r = memcmp(&nullproc_expected_response, &nullproc_response, sizeof(nullproc_response));
+  r = memcmp(&nullproc_expected_response[msg_start], &nullproc_response[msg_start], sizeof(nullproc_response) - msg_start);
   if (r == 0 && ip_addr) {
     /* Write string representation of client address to ip_addr */
-    memset(ip_addr, 0, ip_addr_len - 1);
+    *ip_addr = '\0';
     if (domain == AF_INET)
       set_buf(ip_addr, ip_addr_len, small_inet_ntoa(client_addr.in.sin_addr), NULL);
   }
@@ -482,9 +488,7 @@ int small_inet_aton(const char *cp, struct in_addr *inp)
   for (i = 0, ptr = (char *)cp; i < 4; i++, ptr = endptr + 1) {
     endptr = NULL;
     value = strtoul(ptr, &endptr, 10);
-    if (!endptr || endptr == ptr || *endptr != ip_part_terminator_chars[i])
-      return 0;
-    if (value >= 256)
+    if (value >= 256 || !endptr || endptr == ptr || *endptr != ip_part_terminator_chars[i])
       return 0;
     result.bytes[i] = (char)value;
   }
