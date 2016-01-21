@@ -34,6 +34,8 @@ static int find_bootserver_from_pnp();
 static int find_bootserver_helper(void *data, const char *line, int line_is_incomplete);
 #endif
 
+static void cleanup_initramfs();
+
 #ifdef ENABLE_DEBUG
 static void debug_dump_file(const char *fn);
 static int debug_dump_file_helper(void *data, const char *line, int line_is_incomplete);
@@ -245,6 +247,9 @@ int main(int argc, char **argv)
   if (r < 0)
     panic(errno, "Couldn't move /dev or /proc from initramfs to root filesystem", NULL);
 
+  /* clean up initramfs contents to free memory */
+  cleanup_initramfs();
+
   /* switch root */
   r = chdir(TARGET_DIRECTORY);
   if (!r)
@@ -429,3 +434,16 @@ static int debug_dump_file_helper(void *data, const char *line, int line_is_inco
   return 0;
 }
 #endif
+
+void cleanup_initramfs()
+{
+  /* Try to remove files and directories that are no longer needed. As
+   * this is optional, ignore the return values, because at worst this
+   * is a tiny memory leak. (/init is small anyway.) /dev and /proc
+   * have been moved to /target at the point when this function is
+   * called. We can't remove /target, because the rootfs is mounted
+   * there. */
+  (void) rmdir("/dev");
+  (void) rmdir("/proc");
+  (void) unlink("/init");
+}
