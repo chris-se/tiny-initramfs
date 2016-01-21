@@ -29,19 +29,23 @@
 static void parse_cmdline();
 static int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete);
 static void try_exec(int orig_argc, char *const orig_argv[], const char *binary);
+#ifdef ENABLE_NFS4
 static int find_bootserver_from_pnp();
 static int find_bootserver_helper(void *data, const char *line, int line_is_incomplete);
+#endif
 
-#ifdef DEBUG_INITRAMFS
+#ifdef ENABLE_DEBUG
 static void debug_dump_file(const char *fn);
 static int debug_dump_file_helper(void *data, const char *line, int line_is_incomplete);
 #endif
 
 static char root_device[MAX_PATH_LEN];
 static char root_options[MAX_LINE_LEN];
+#ifdef ENABLE_NFS4
 static char root_nfshost[MAX_LINE_LEN];
 static char root_nfsdir[MAX_LINE_LEN];
 static char root_nfsoptions[MAX_LINE_LEN];
+#endif
 static char root_fstype[MAX_FILESYSTEM_TYPE_LEN];
 static int root_delay;
 static int root_wait_indefinitely;
@@ -54,41 +58,46 @@ int main(int argc, char **argv)
   int timeout_togo = DEVICE_TIMEOUT;
   fstab_info usrfs_info;
   char real_device_name[MAX_PATH_LEN] = { 0 };
-  size_t root_fstype_len, root_nfsdir_len, root_nfsoptions_len, root_options_len;
+#ifdef ENABLE_NFS4
+  size_t root_fstype_len, root_options_len, root_nfsdir_len, root_nfsoptions_len;
+#endif
 
-#ifdef DEBUG_INITRAMFS
-  warn("[ 0  ] Startup", NULL);
+#ifdef ENABLE_DEBUG
+  warn("Begun execution", NULL);
 #endif
 
   r = mount("proc", "/proc", "proc", MS_NODEV | MS_NOEXEC | MS_NOSUID, NULL);
   if (r < 0)
     panic(errno, "Could not mount /proc", NULL);
 
-#ifdef DEBUG_INITRAMFS
-  warn("[ 1  ] /proc mounted", NULL);
+#ifdef ENABLE_DEBUG
+  warn("Mounted /proc", NULL);
 #endif
 
   r = mount("udev", "/dev", "devtmpfs", 0, DEVTMPFS_MOUNTOPTS);
   if (r < 0)
     panic(errno, "Could not mount /dev (as devtmpfs)", NULL);
 
-#ifdef DEBUG_INITRAMFS
-  warn("[ 2  ] /dev mounted", NULL);
+#ifdef ENABLE_DEBUG
+  warn("Mounted /dev", NULL);
 #endif
 
   parse_cmdline();
 
-#ifdef DEBUG_INITRAMFS
-  warn("[ 3  ] ", PROC_CMDLINE_FILENAME, " parsed", NULL);
+#ifdef ENABLE_DEBUG
+  warn("Parsed ", PROC_CMDLINE_FILENAME, NULL);
 #endif
 
   if (!strlen(root_device)) {
+#ifdef ENABLE_NFS4
     if (strlen(root_nfshost))
       set_buf(root_device, MAX_PATH_LEN, "/dev/nfs", NULL);
     else
+#endif
       panic(0, "No root filesystem (root=) specified", NULL);
   }
 
+#ifdef ENABLE_NFS4
   root_fstype_len = strlen(root_fstype);
 
   if (strcmp(root_device, "/dev/nfs") == 0) {
@@ -125,22 +134,24 @@ int main(int argc, char **argv)
         panic(0, "nfsroot options (\"", root_nfsoptions, "\") too long.", NULL);
       append_to_buf(root_options, MAX_LINE_LEN, root_options_len ? "," : "", root_nfsoptions, NULL);
     }
-  } else {
+  } else
+#endif
+  {
     if (root_wait_indefinitely)
       timeout_togo = -1;
     wait_for_device(real_device_name, &timeout_togo, root_device, root_delay);
   }
 
-#ifdef DEBUG_INITRAMFS
-  warn("[ 4  ] waited for root device", NULL);
+#ifdef ENABLE_DEBUG
+  warn("Waited for root device", NULL);
 #endif
 
   r = mount_filesystem(real_device_name, TARGET_DIRECTORY, strlen(root_fstype) ? root_fstype : NULL, root_options, global_rw ? 0 : MS_RDONLY, global_rw ? MS_RDONLY : 0);
   if (r < 0)
     panic(-r, "Failed to mount root filesystem from ", root_device, NULL);
 
-#ifdef DEBUG_INITRAMFS
-  warn("[ 5  ] mounted root filesystem", NULL);
+#ifdef ENABLE_DEBUG
+  warn("Mounted root filesystem", NULL);
 #endif
 
   /* We need these regardless of /usr handling */
@@ -156,23 +167,42 @@ int main(int argc, char **argv)
   if (r < 0 && r != -ENOENT && r != -ENODEV)
     panic(-r, "Failed to parse /etc/fstab in root device (non-existence would not be an error)", NULL);
   if (r == -ENODEV)
-    panic(0, "Entry in /etc/fstab for /usr must be a (non-symlink) kernel device path, or of the form UUID=, or an NFS filesystem..", NULL);
+    panic(0, "Entry in /etc/fstab for /usr must be a (non-symlink) kernel device path"
+#ifdef ENABLE_UUID
+    ", or of the form UUID="
+#endif
+#ifdef ENABLE_NFS4
+    ", or an NFS filesystem."
+#endif
+         , NULL);
 
-#ifdef DEBUG_INITRAMFS
-  warn("[ 6  ] parsed /etc/fstab", NULL);
+#ifdef ENABLE_DEBUG
+  warn("Parsed ", FSTAB_FILENAME, NULL);
 #endif
 
   if (r == 0) {
     int usr_rw_override = global_rw;
 
-    if (strcmp(usrfs_info.type, "nfs") != 0 && strcmp(usrfs_info.type, "nfs4") != 0) {
+#ifdef ENABLE_DEBUG
+    warn("Separate /usr filesystem: trying to mount", NULL);
+#endif
+
+    if (
+#ifdef ENABLE_NFS4
+        strcmp(usrfs_info.type, "nfs") != 0 && strcmp(usrfs_info.type, "nfs4") != 0
+#else
+        1
+#endif
+       ) {
       /* wait for /usr filesystem device */
       wait_for_device(real_device_name, &timeout_togo, usrfs_info.source, 0);
 
-#ifdef DEBUG_INITRAMFS
-      warn("[ 6.1] waited for /usr device", NULL);
+#ifdef ENABLE_DEBUG
+      warn("Waited for /usr device", NULL);
 #endif
-    } else {
+    }
+#ifdef ENABLE_NFS4
+    else {
       set_buf(real_device_name, MAX_PATH_LEN, usrfs_info.source, NULL);
 
       /* for network filesystems don't consider ro/rw on the 
@@ -180,33 +210,36 @@ int main(int argc, char **argv)
        * in /etc/fstab */
       usr_rw_override = 0;
 
-#ifdef DEBUG_INITRAMFS
-      warn("[ 6.1] no need to wait for /usr device (NFS)", NULL);
+#ifdef ENABLE_DEBUG
+      warn("No need to wait for /usr device (NFS)", NULL);
 #endif
     }
+#endif /* defined(ENABLE_NFS4) */
 
     /* mount it */
     r = mount_filesystem(real_device_name, TARGET_DIRECTORY "/usr", usrfs_info.type, usrfs_info.options, usr_rw_override ? 0 : MS_RDONLY, usr_rw_override ? MS_RDONLY : 0);
     if (r < 0)
       panic(-r, "Failed to mount /usr filesystem from ", usrfs_info.source, NULL);
 
-#ifdef DEBUG_INITRAMFS
-    warn("[ 6.2] mounted /usr filesystem", NULL);
+#ifdef ENABLE_DEBUG
+    warn("Mounted /usr filesystem", NULL);
+  } else {
+    warn("No separate /usr filesystem", NULL);
 #endif
   }
 
   /* move mounts */
   r = mount("/dev", TARGET_DIRECTORY "/dev", NULL, MS_MOVE, NULL);
 
-#ifdef DEBUG_INITRAMFS
-    warn("[ 7  ] moved /dev", NULL);
+#ifdef ENABLE_DEBUG
+    warn("Moved /dev mount", NULL);
 #endif
 
   if (!r)
     r = mount("/proc", TARGET_DIRECTORY "/proc", NULL, MS_MOVE, NULL);
 
-#ifdef DEBUG_INITRAMFS
-    warn("[ 8  ] moved /proc", NULL);
+#ifdef ENABLE_DEBUG
+    warn("Moved /proc mount", NULL);
 #endif
 
   if (r < 0)
@@ -221,12 +254,12 @@ int main(int argc, char **argv)
   if (r < 0)
     panic(errno, "Couldn't switch root filesystem", NULL);
 
-#ifdef DEBUG_INITRAMFS
-    warn("[ 9  ] switched root, output of /proc/self/mountinfo now is:", NULL);
+#ifdef ENABLE_DEBUG
+    warn("Switched root file system, contents of /proc/self/mountinfo:", NULL);
     debug_dump_file("/proc/self/mountinfo");
-    warn("[10  ] sleeping for 5s", NULL);
+    warn("Sleeping for 5s", NULL);
     sleep(5);
-    warn("[11  ] booting the system", NULL);
+    warn("Booting the system", NULL);
 #endif
 
   if (strlen(init_binary)) {
@@ -240,7 +273,7 @@ int main(int argc, char **argv)
 
   /* Message stolen from Linux's init/main.c */
   panic(0, "No working init found. Try passing init= option to kernel. "
-           "See Linux Documentation/init.txt for guidance.", NULL);
+           "See Linux's Documentation/init.txt for guidance.", NULL);
   _exit(1);
   return 1;
 }
@@ -271,7 +304,13 @@ int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete)
       if (strlen(token) > MAX_PATH_LEN - 1)
         panic(0, "Parameter root=", token, " too long", NULL);
       if (!is_valid_device_name(token, NULL, NULL, NULL, NULL))
-        panic(0, "Parameter root=", token, " unsupported (only /dev/, 0xMAJMIN and UUID= are supported)", NULL);
+        panic(0, "Parameter root=", token, " unsupported (only /dev/"
+#ifdef ENABLE_UUID
+              ", 0xMAJMIN and UUID= are "
+#else
+              " is "
+#endif
+              " supported)", NULL);
       set_buf(root_device, MAX_PATH_LEN, token, NULL);
     } else if (!strncmp(token, "rootflags=", 10)) {
       token += 10;
@@ -300,7 +339,9 @@ int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete)
       if (strlen(token) > MAX_PATH_LEN - 1)
         panic(0, "Parameter init=", token, " too long", NULL);
       set_buf(init_binary, MAX_PATH_LEN, token, NULL);
-    } else if (!strncmp(token, "nfsroot=", 8)) {
+    }
+#ifdef ENABLE_NFS4
+    else if (!strncmp(token, "nfsroot=", 8)) {
       char *ptr;
 
       root_nfsdir[0] = '\0';
@@ -323,10 +364,12 @@ int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete)
 
       set_buf(root_nfsdir, MAX_LINE_LEN, token, NULL);
     }
+#endif
   }
   return 0;
 }
 
+#ifdef ENABLE_NFS4
 int find_bootserver_from_pnp()
 {
   return traverse_file_by_line(PROC_NET_PNP_FILENAME, (traverse_line_t)find_bootserver_helper, NULL);
@@ -354,6 +397,7 @@ int find_bootserver_helper(void *data, const char *line, int line_is_incomplete)
 
   return 0;
 }
+#endif
 
 void try_exec(int orig_argc, char *const orig_argv[], const char *binary)
 {
@@ -371,7 +415,7 @@ void try_exec(int orig_argc, char *const orig_argv[], const char *binary)
   execv(binary, argv);
 }
 
-#ifdef DEBUG_INITRAMFS
+#ifdef ENABLE_DEBUG
 void debug_dump_file(const char *fn)
 {
   (void)traverse_file_by_line(fn, (traverse_line_t)debug_dump_file_helper, NULL);

@@ -55,21 +55,24 @@ int mount_filesystem(const char *source, const char *target,
   int nfsver = -1;
   int rc = -1;
 
-#ifdef DEBUG_INITRAMFS
-  warn("[----] mount_filesystem(\"", source, "\", \"", target, "\", \"", type ? type : "(null)", "\", \"", flags, "\", ...): start", NULL);
+#ifdef ENABLE_DEBUG
+  warn("mount_filesystem(\"", source, "\", \"", target, "\", \"", type ? type : "(null)", "\", \"", flags, "\", ...): begin", NULL);
 #endif
 
+#ifdef ENABLE_NFS4
   if (type && (!strcmp(type, "nfs") || !strcmp(type, "nfs4")))
     nfsver = !strcmp(type, "nfs4") ? 4 : 0;
+#endif
   options = parse_mount_options(data, MAX_LINE_LEN, flags, nfsver != -1 ? &nfsver : NULL);
 
-#ifdef DEBUG_INITRAMFS
-  warn("[----] mount_filesystem: parsing mount options (done), unparsed options: ", data, NULL);
+#ifdef ENABLE_DEBUG
+  warn("mount_filesystem: parsing mount options (done), unparsed options: ", data, NULL);
 #endif
 
   options |= override_flags_add;
   options &= ~override_flags_subtract;
 
+#ifdef ENABLE_NFS4
   if (type && !strcmp(type, "nfs4") && nfsver != 4)
     panic(0, "Cannot combine [nfs]vers=2/3 option with filesystem type nfs4.", NULL);
   if (type && (!strcmp(type, "nfs") || !strcmp(type, "nfs4"))) {
@@ -80,9 +83,10 @@ int mount_filesystem(const char *source, const char *target,
      * and then NFSv3/2. But until we support NFSv3, we'll just do NFSv4. */
     return mount_nfs4(source, target, options, data);
   }
+#endif
 
-#ifdef DEBUG_INITRAMFS
-  warn("[----] mount_filesystem: not NFS", NULL);
+#ifdef ENABLE_DEBUG
+  warn("mount_filesystem: not NFS", NULL);
 #endif
 
   /* We need to loop through filesystem types as the kernel doesn't do

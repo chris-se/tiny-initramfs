@@ -24,6 +24,8 @@
 #include <sys/types.h>
 #include <fcntl.h>
 
+#include <config.h>
+
 #ifndef MAX_LINE_LEN
 #define MAX_LINE_LEN              4096
 #endif
@@ -123,15 +125,19 @@ enum {
   WANT_UUID   = 2
 };
 void wait_for_device(char *real_device_name /* MAX_PATH_LEN bytes */, int *timeout, const char *device, int delay);
+#ifdef ENABLE_UUID
 int scan_devices(char *device_name /* MAX_PATH_LEN bytes */, int type, unsigned int maj, unsigned int min, const char *uuid /* 16 bytes */);
 int parse_uuid(char *uuid_buf /* 16 bytes */, const char *string_representation);
+#endif
 int is_valid_device_name(const char *device_name, int *type, unsigned int* major, unsigned int *minor, char *uuid /* 16 bytes */);
 
 /* util.c */
 void append_to_buf(char *buf, size_t size, ...);
 void set_buf(char *buf, size_t size, ...);
 
+#ifdef ENABLE_NFS4
 /* nfs.c */
 int mount_nfs4(const char *source, const char *target, int mount_flags, const char *nfs_options);
+#endif
 
 #endif /* !defined(TINY_INITRAMFS_H) */

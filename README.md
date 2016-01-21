@@ -26,11 +26,9 @@ There are three primary use cases:
 Features
 --------
 
-**FIXME: Update # of LoC, update initrd.img sizes.**
-
  * Simplicity: the implementation is really simple and very linear.
    It's most likely easier to understand than other initramfs
-   implementations. The entire program is less than 1400 LoC, and that
+   implementations. The entire program is less about 2500 LoC, and that
    includes the License headers in the files.
  * Size: the implementation is really small (see below).
  * Speed: there is no noticeable performance penalty, because very
@@ -57,19 +55,32 @@ Features
    configuration needs to be specified via the `ip=` kernel command
    line parameter.
 
-On a x86_64 system with the default `-O2 -fstack-protector=strong`
-compiler flags, statically linked with the binary stripped, and the
-resulting initramfs compressed with default `gzip`, the images produced
-have the following size for different libcs tested:
+On a x86_64 system with the default `-Og` compiler flags, statically
+linked with the binary stripped, and the resulting initramfs compressed
+with `gzip -9`, the images produced have the following size, depending
+on the compiled-in options:
 
-| libc implementation | `initrd.img` size (bytes) |
-| ------------------- | -------------------------:|
-| musl 1.1.5          |                     16250 |
-| dietlibc 0.33       |                     13670 |
-| glibc 2.19          |                    324893 |
+| UUID | NFS4 | DEBUG | `initrd.img` size (bytes) |
+| ---- | ---- | ----- | ------------------------- |
+| N    | N    | N     |                      8996 |
+| N    | N    | Y     |                      9432 |
+| Y    | N    | N     |                     10347 |
+| Y    | N    | Y     |                     10820 |
+| N    | Y    | N     |                     12267 |
+| N    | Y    | Y     |                     12767 |
+| Y    | Y    | N     |                     13542 |
+| Y    | Y    | Y     |                     14033 |
+
+In all cases here, dietlibc 0.33~cvs20120325-6 was used.
 
 The size of an initramfs using `tiny-initramfs` is thus about 16 KiB if
 one doesn't use glibc.
+
+Using musl instead of dietlibc adds between 1.8 and 2.4 kiB to the
+resulting `initrd.img` size (depending on the feature set).
+
+Using glibc instead of dietlibc adds around 310 kiB to the resulting
+initrd image.
 
 Requirements
 ------------
@@ -132,14 +143,16 @@ Caveats
    size, so having `fsck` present in the initramfs image is not in the
    scope of `tiny-initramfs`, because it would remove all the
    advantages.)
- * If you use anything other than systemd as the init system, you need
-   to make sure that a split-`/usr` file system is remounted read-write
-   if the `ro` option is passed on the kernel command line (because
-   `tiny-initramfs` will also mount `/usr` read-only then) - otherwise
-   `/usr` will remain read-only after boot. `tiny-initramfs` itself
-   doesn't care about which init system is used, but the init system
-   must be able to cope with the state that `tiny-initramfs` leaves the
-   `/usr` file system in. This may require changes to some scripts.
+ * You need to make sure that a split-`/usr` file system is remounted
+   read-write if the `ro` option is passed on the kernel command line
+   (because `tiny-initramfs` will also mount `/usr` read-only then);
+   otherwise `/usr` will remain read-only after boot. If you use
+   systemd as your init system, or e.g. the newest Debian initscripts
+   (`2.88dsf-59.3` or higher) in conjunction with sysvinit, this should
+   work. `tiny-initramfs` itself doesn't care about which init system
+   is used, but the init system must be able to cope with the state
+   that `tiny-initramfs` leaves the  `/usr` file system in. This may
+   require changes to some scripts.
  * If `/usr` is a bind mount in `/etc/fstab`, this will currently fail,
    even though it should be supportable. (It's on the TODO list, as
    long as that doesn't require yet another file system.)
@@ -174,18 +187,34 @@ work with your favorite libc implementation, please report this, so
 that it may be fixed.
 
 Find out the compile command required to use your C library. For
-example, with musl it's `musl-gcc`, with dietlibc it's `"diet gcc"`.
+example, with dietlibc it's `"diet gcc"`, with musl it's `musl-gcc`.
 
 Use
 
-    make CC=musl-gcc
+    ./configure CC="diet gcc"
+    make
 
 to compile the `tiny_initramfs` binary and
 
-    make initrd.img CC=musl-gcc
+    make initrd.img
 
-to auto-create the initramfs image. Replace `musl-gcc` with the
+to auto-create the initramfs image. Replace `"diet gcc"` with the
 appropriate command for your libc implementation.
+
+Note that if you specify `CFLAGS` (potentially via your build system)
+you should take care to specify `-Os` and *not* to specify any debug
+(`-g`) options, as those tend to increase the binary size quite a bit.
+`./configure` will warn you about it, but it not abort in that case,
+because the binary will work. Likewise, if you don't use an alternative
+libc implementation but glibc, `./configure` will warn you about it,
+because that will increase the binary size by a factor of 10 to 20.
+
+You may specify multiple options to enable/disable certain features in
+the initramfs. Specifically, you can disable UUID mounting support
+(enabled by default), and you can enable NFSv4 support (disabled by
+default). A list of possible options is displayed when using
+
+    ./configure --help
 
 The initramfs creation is really simple, you may also do so manually:
 
@@ -209,6 +238,23 @@ With this there's now a (kernel-independent) initramfs image that may
 be used to boot the system. Note that as of now there is no integration
 with distributions, so configuring the boot loader etc. has to be done
 manually.
+
+Debugging
+---------
+
+If an error occurs, tiny-initramfs will print an error message
+indicating the problem and then sleep for 10s before exiting. This is
+because exiting will cause a kernel panic, but typical kernel traces
+are so large that they replace the entire screen contents on a standard
+terminal, so that the original message is not visible anymore. The 10s
+delay allows the user to see what the problem is.
+
+Additionally, one may use the `--enable-debug` flag of `./configure` to
+make `initrd.img` verbose (while increasing the size a bit). This makes
+debugging easier, especially if the system hangs at a certain point.
+When compiled with that option, tiny-initramfs will print the contents
+of `/proc/self/mountinfo` and sleep for 5s after mounting the root (and
+potentially /usr) file systems before executing `init`.
 
 Design considerations
 ---------------------
@@ -252,8 +298,8 @@ There is no goal of adding too many additional features here, because
 any additional feature is going to increase the binary size, and this
 is supposed to be minimalistic and **not** a replacement for a full
 initramfs. If you need advanced features, please use an already
-existing solution. That said, there are two things that might be
-interesting regardless:
+existing solution. That said, there are a couple of things that might
+be interesting regardless:
 
  * Minimalistic NFSv2/3 mounting support (akin to the current NFSv4
    code).
@@ -271,16 +317,20 @@ interesting regardless:
 
 Note that the goal is to keep the `initrd.img` size smaller than 16 KiB
 on all plattforms, so a cutoff of 15 KiB is used on x86_64, to leave
-room for different assembly code sizes etc.
+room for different assembly code sizes etc., at least when used in a
+minimal configuration. Therefore, some features (such as `UUID=` and
+NFSv4 support) are compile-time optional.
 
-Implementing any new feature should not make the image size larger than
-this - and if that isn't possible, these types of features should then
-be compile-time optional.
+Note: any features missing from tiny-initramfs that would be required
+in a space-constrained environment (i.e. mainly embedded), where it was
+designed for, stand an excellent chance of being included later, at
+least compile-time optional. Please make your case if you are missing
+something.
 
 TODO
 ----
 
- * autotools or cmake based build system.
+ * bind mounts for /usr
  * clean up the code a bit.
  * go through all messages printed and make sure they are uniform in
    style

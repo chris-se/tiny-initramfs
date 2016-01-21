@@ -29,11 +29,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdint.h>
+
+#ifdef ENABLE_UUID
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
-#include <stdint.h>
 
 /* Not all libcs define these things, unfortunately... */
 #ifndef DT_UNKNOWN
@@ -87,6 +89,7 @@ int parse_uuid(char *uuid_buf /* 16 bytes */, const char *string_representation)
 
   return 0;
 }
+#endif /* defined(ENABLE_UUID) */
 
 void wait_for_device(char *real_device_name, int *timeout, const char *device, int delay)
 {
@@ -111,11 +114,14 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
   /* Our timeout starts *after* the rootdelay. */
   start = time(NULL);
 
-  if (type == WANT_NAME) {
+#ifdef ENABLE_UUID
+  if (type != WANT_NAME) {
+    have_device = scan_devices(real_device_name, type, major, minor, uuid);
+  } else
+#endif
+  {
     set_buf(real_device_name, MAX_PATH_LEN, device, NULL);
     have_device = access(device, F_OK) != 0;
-  } else {
-    have_device = scan_devices(real_device_name, type, major, minor, uuid);
   }
 
   while (have_device) {
@@ -134,10 +140,12 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
     struct timespec rem;
     (void)nanosleep(&req, &rem);
 
-    if (type == WANT_NAME)
-      have_device = access(device, F_OK) != 0;
-    else
+#ifdef ENABLE_UUID
+    if (type != WANT_NAME)
       have_device = scan_devices(real_device_name, type, major, minor, uuid);
+    else
+#endif
+      have_device = access(device, F_OK) != 0;
   }
 
   /* Make sure we record how many seconds on the timeout are left,
@@ -150,6 +158,77 @@ void wait_for_device(char *real_device_name, int *timeout, const char *device, i
   }
 }
 
+int is_valid_device_name(const char *device_name, int *type, unsigned int* major, unsigned int *minor, char *uuid)
+{
+#ifdef ENABLE_UUID
+  int r;
+  char *endptr;
+  char uuid_buf[32 + 4 + 1] = { 0 };
+  char uuid_temp[16];
+  unsigned long x;
+#else
+  (void)major;
+  (void)minor;
+  (void)uuid;
+#endif
+
+  if (!device_name)
+    return 0;
+
+  if (!*device_name)
+    return 0;
+
+  if (strncmp(device_name, "/dev/", 5) == 0) {
+    if (type)
+      *type = WANT_NAME;
+    return 1;
+  }
+
+#ifdef ENABLE_UUID
+  /* 0x803 or so for 8:3 */
+  if (device_name[0] == '0' && device_name[1] == 'x') {
+    x = strtoul(device_name + 2, &endptr, 16);
+    if (endptr && !*endptr) {
+      if (type) {
+        *type = WANT_MAJMIN;
+        *major = (int)(x >> 8);
+        *minor = (int)(x & 0xff);
+      }
+      return 1;
+    }
+    return 0;
+  }
+
+  if (strncmp(device_name, "UUID=", 5) == 0) {
+    char c;
+
+    device_name += 5;
+    c = *device_name;
+    if (c == '"' || c == '\'') {
+      ++device_name;
+      if (device_name[strlen(device_name)-1] != c)
+        return 0;
+      if (strlen(device_name) > 32 + 4 + 1)
+        return 0;
+      strncpy(uuid_buf, device_name, 32 + 4);
+    } else {
+      if (strlen(device_name) > 32 + 4)
+        return 0;
+      strncpy(uuid_buf, device_name, 32 + 4);
+    }
+    if (!uuid)
+      uuid = uuid_temp;
+    r = (parse_uuid(uuid, uuid_buf) == 0);
+    if (r && type)
+      *type = WANT_UUID;
+    return r;
+  }
+#endif
+
+  return 0;
+}
+
+#ifdef ENABLE_UUID
 /* Which data types for this structure is available is wildly
  * incompatible between libc implementations, so we just use the
  * stdint.h types. */
@@ -228,68 +307,6 @@ int scan_devices(char *device_name /* MAX_PATH_LEN bytes */, int type, unsigned 
   close(dirfd);
 
   return -ENOENT;
-}
-
-int is_valid_device_name(const char *device_name, int *type, unsigned int* major, unsigned int *minor, char *uuid)
-{
-  int r;
-  char *endptr;
-  char uuid_buf[32 + 4 + 1] = { 0 };
-  char uuid_temp[16];
-  unsigned long x;
-
-  if (!device_name)
-    return 0;
-
-  if (!*device_name)
-    return 0;
-
-  if (strncmp(device_name, "/dev/", 5) == 0) {
-    if (type)
-      *type = WANT_NAME;
-    return 1;
-  }
-
-  /* 0x803 or so for 8:3 */
-  if (device_name[0] == '0' && device_name[1] == 'x') {
-    x = strtoul(device_name + 2, &endptr, 16);
-    if (endptr && !*endptr) {
-      if (type) {
-        *type = WANT_MAJMIN;
-        *major = (int)(x >> 8);
-        *minor = (int)(x & 0xff);
-      }
-      return 1;
-    }
-    return 0;
-  }
-
-  if (strncmp(device_name, "UUID=", 5) == 0) {
-    char c;
-
-    device_name += 5;
-    c = *device_name;
-    if (c == '"' || c == '\'') {
-      ++device_name;
-      if (device_name[strlen(device_name)-1] != c)
-        return 0;
-      if (strlen(device_name) > 32 + 4 + 1)
-        return 0;
-      strncpy(uuid_buf, device_name, 32 + 4);
-    } else {
-      if (strlen(device_name) > 32 + 4)
-        return 0;
-      strncpy(uuid_buf, device_name, 32 + 4);
-    }
-    if (!uuid)
-      uuid = uuid_temp;
-    r = (parse_uuid(uuid, uuid_buf) == 0);
-    if (r && type)
-      *type = WANT_UUID;
-    return r;
-  }
-
-  return 0;
 }
 
 int hexbyte(char c)
@@ -437,3 +454,4 @@ int is_btrfs_with_uuid(const char *device_name, const char *uuid_buf)
   return memcmp(&buf[0x40], "_BHRfS_M", 8) == 0
       && memcmp(&buf[0x20], uuid_buf, 16) == 0;
 }
+#endif /* defined(ENABLE_UUID) */

@@ -88,7 +88,13 @@ int process_fstab_entry(fstab_find_fs_data *data, const char *orig_line, int lin
   if (strcmp(fields[1], data->dest) != 0)
     return 0;
 
-  if (strcmp(fields[2], "nfs") != 0 && strcmp(fields[2], "nfs4") != 0) {
+  if (
+#ifdef ENABLE_NFS4
+      strcmp(fields[2], "nfs") != 0 && strcmp(fields[2], "nfs4") != 0
+#else
+      1
+#endif
+  ) {
     if (!is_valid_device_name(fields[0], NULL, NULL, NULL, NULL))
       return -ENODEV;
   }
