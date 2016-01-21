@@ -20,8 +20,8 @@
  * Note:
  *
  * The mount_nfs4 function is based on the nfs4mount function in
- * util-linux, originally by Trond Myklebust <trond.myklebust@fys.uio.no>,
- * licensed under the GLPv2+.
+ * util-linux (but heavily modified), originally by Trond Myklebust
+ * <trond.myklebust@fys.uio.no>, licensed under the GLPv2+.
  */
 
 #include <sys/types.h>

@@ -1,6 +1,5 @@
 /*
  * tiny_initramfs - Minimalistic initramfs implementation
- * Copyright (C) 2016 Christian Seiler <christian@iwakd.de>
  *
  * nfs4.h: NFSv4 kernel interface definition
  * Copyright (C) 2002 Trond Myklebust <trond.myklebust@fys.uio.no>
