@@ -54,42 +54,38 @@ Features
    (as documented in the kernel documentation). The network
    configuration needs to be specified via the `ip=` kernel command
    line parameter.
+ * Very trivial module loading support (**no** automatic dependency
+   resolution).
 
-On a x86_64 system with the default `-Og` compiler flags, statically
-linked with the binary stripped, and the resulting initramfs compressed
-with `gzip -9`, the images produced have the following size, depending
-on the compiled-in options:
-
-| UUID | NFS4 | DEBUG | `initrd.img` size (bytes) |
-| ---- | ---- | ----- | ------------------------- |
-| N    | N    | N     |                      8996 |
-| N    | N    | Y     |                      9432 |
-| Y    | N    | N     |                     10347 |
-| Y    | N    | Y     |                     10820 |
-| N    | Y    | N     |                     12267 |
-| N    | Y    | Y     |                     12767 |
-| Y    | Y    | N     |                     13542 |
-| Y    | Y    | Y     |                     14033 |
-
-In all cases here, dietlibc 0.33~cvs20120325-6 was used.
-
-The size of an initramfs using `tiny-initramfs` is thus about 16 KiB if
-one doesn't use glibc.
+When compiled on a x86_64 system with the default `-Og` compiler flags,
+statically linked against dietlibc 0.33~cvs20120325-6, the binary
+stripped and the resulting initramfs (without any modules added)
+compressed with `gzip -9`, the images produced are between 9 kiB and
+14 kiB, depending on the feature set selected.
 
 Using musl instead of dietlibc adds between 1.8 and 2.4 kiB to the
 resulting `initrd.img` size (depending on the feature set).
 
 Using glibc instead of dietlibc adds around 310 kiB to the resulting
-initrd image.
+initrd image and is not recommended (although it will work).
+
+Adding modules to the initramfs will increase the size, and many block
+device and file system drivers are 100s of kiB in size. On the other
+hand, the kernel would be larger if they were compiled in, so the
+actual amount of space lost due to using modules is quite a bit
+smaller.
 
 Requirements
 ------------
 
- * The kernel must have the necessary block device drivers built-in
-   that are required to access the root and `/usr` file systems.
-   **Warning:** this is not true for most default kernels of mainstream
-   distributions, as they require a full initramfs to load the modules
-   required to mount the root file system.
+ * The kernel should have the necessary block device and file system
+   drivers built-in that are required to access the root and `/usr`
+   file systems. **Warning:** this is not true for most default kernels
+   of mainstream  distributions, as they require a full initramfs to
+   load the modules required to mount the root file system.
+ * If the necessary drivers are not built into the kernel, there is
+   limited support for loading modules from within the initramfs, see
+   below for details.
  * The kernel must have `CONFIG_DEVTMPFS` built-in, because this
    implementation assumes the kernel will just create the devices by
    itself. (This is true for most distribution kernels.)
@@ -107,8 +103,6 @@ When not to use
    udev (such as `/dev/disk/by-label/...`). Only the kernel names
    themselves, such as `/dev/sda1`, as well as `UUID=` and hexadecimal
    device numbers (`0xMAJMIN`, e.g. `0x801`) are supported.
- * No modules can be loaded in the initramfs, everything that's
-   required needs to be compiled in.
  * NFSv2/NFSv3 are currently not supported.
  * When booting from USB storage you should always use `UUID=`, because
    device names are not necessarily stable.
@@ -238,6 +232,67 @@ With this there's now a (kernel-independent) initramfs image that may
 be used to boot the system. Note that as of now there is no integration
 with distributions, so configuring the boot loader etc. has to be done
 manually.
+
+Support for loading modules
+---------------------------
+
+There is limited support for loading modules if `--enable-modules` is
+specified during the `configure` invocation. To use this feature, one
+needs to create a file `/modules` in the initramfs image that is of the
+following format:
+
+    /file.ko options
+
+The modules should not be in a sub-directory, because the directory
+containing them will not be cleaned-up by tiny-initramfs after mounting
+the root file system. (Loading the modules will work though.)
+
+For example, the virtio block device driver `virtio_blk` requires some
+additional modules to work. Using `modprobe` one may find out which:
+
+    $ /sbin/modprobe --all --ignore-install --quiet --show-depends virtio_blk
+    insmod /lib/modules/[...]/kernel/drivers/virtio/virtio.ko
+    insmod /lib/modules/[...]/kernel/drivers/virtio/virtio_ring.ko
+    insmod /lib/modules/[...]/kernel/drivers/block/virtio_blk.ko
+
+It turns out that this is not quite sufficient, because the
+`virtio_pci` driver is also required for `virtio_blk` to work (the
+driver loads without `virtio_pci`, but doesn't work), so one may use:
+
+    $ /sbin/modprobe --all --ignore-install --quiet --show-depends virtio_blk virtio_pci
+    insmod /lib/modules/3.16.0-4-amd64/kernel/drivers/virtio/virtio.ko
+    insmod /lib/modules/3.16.0-4-amd64/kernel/drivers/virtio/virtio_ring.ko
+    insmod /lib/modules/3.16.0-4-amd64/kernel/drivers/block/virtio_blk.ko
+    insmod /lib/modules/3.16.0-4-amd64/kernel/drivers/virtio/virtio.ko
+    insmod /lib/modules/3.16.0-4-amd64/kernel/drivers/virtio/virtio_ring.ko
+    insmod /lib/modules/3.16.0-4-amd64/kernel/drivers/virtio/virtio_pci.ko
+
+(Note that in case soft dependencies are treated via `install` lines,
+these have to be resolved manually. This is typically not the case for
+drivers needed within initramfs, because other implementations also
+suffer from the same issue. `install` is deprecated anyway according to
+the manual page of `modprobe.d`.)
+
+One may then copy these drivers to the initramfs image, and then add
+a module file with the following contents:
+
+    /virtio.ko
+    /virtio_ring.ko
+    /virtio_blk.ko
+    /virtio.ko
+    /virtio_ring.ko
+    /virtio_pci.ko
+
+The order is important, because dependency resolution is **not**
+performed by tiny-initramfs, it has to be done while creating the
+initramfs image. Duplicate entries are not a problem, because they will
+silently be ignored (but you may remove duplicate entries if you don't
+change the order otherwise).
+
+Options may be specified when followed by a space (tab characters not
+supported), for example:
+
+    /libata.ko noacpi
 
 Debugging
 ---------

@@ -19,6 +19,27 @@ AS_IF([test x"$enable_nfs4" = x"yes"], [AC_DEFINE([ENABLE_NFS4], [1], [Define if
 AM_CONDITIONAL([ENABLE_NFS4], [test x"$enable_nfs4" = x"yes"])
 AC_ARG_ENABLE([debug], [AS_HELP_STRING([--enable-debug], [Enable support for printing debug messages])])
 AS_IF([test x"$enable_debug" = x"yes"], [AC_DEFINE([ENABLE_DEBUG], [1], [Define if debug messages are enabled])])
+AC_ARG_ENABLE([modules], [AS_HELP_STRING([--enable-modules], [Enable support for loading modules (default is no)])])
+AS_IF([test x"$enable_modules" = x"yes"], [
+  AC_CHECK_FUNC([finit_module], [AC_DEFINE([HAVE_FINIT_MODULE], [1], [Defined if finit_module is available.])], [])
+  AC_MSG_CHECKING([for SYS_finit_module])
+  AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <unistd.h>
+    #include <sys/syscall.h>
+    int a =
+    #ifdef SYS_finit_module
+    42
+    #endif
+    ;]])],[
+      ac_cv_have_sys_finit_module=yes
+      AC_DEFINE([HAVE_SYS_FINIT_MODULE], [1], [Defined if SYS_finit_module is available.])
+      AC_MSG_RESULT([yes])
+    ], [AC_MSG_RESULT([no])])
+  AC_CHECK_FUNC([init_module])
+  AS_IF([test x"$ac_cv_func_init_module" != x"yes" && test x"$ac_cv_have_sys_finit_module" != x"yes" && test x"$ac_cv_func_finit_module" != x"yes"],
+        [AC_MSG_ERROR([Neither finit_module nor SYS_finit_module nor init_module syscalls available.])
+  ])
+  AC_DEFINE([ENABLE_MODULES], [1], [Define if support for loading modules is enabled])
+])
 AC_ARG_WITH([variant-name], [AS_HELP_STRING([--with-variant-name=NAME], [The variant name of the installed binary (default: none)])])
 AS_IF([test x"$with_variant_name" != x""], [
   AC_DEFINE([VARIANT], ["$with_variant_name"], [The installed binary variant name])

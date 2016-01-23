@@ -34,6 +34,10 @@
 #define MAX_PATH_LEN              1024
 #endif
 
+#ifndef MODULES_FILE
+#define MODULES_FILE              "/modules"
+#endif
+
 #ifndef TARGET_DIRECTORY
 #define TARGET_DIRECTORY          "/target"
 #endif

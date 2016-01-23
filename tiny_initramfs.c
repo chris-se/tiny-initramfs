@@ -25,6 +25,14 @@
 #include <errno.h>
 #include <string.h>
 #include <limits.h>
+#if defined(ENABLE_MODULES)
+#if !defined(HAVE_FINIT_MODULE) && !defined(HAVE_SYS_FINIT_MODULE)
+#include <sys/stat.h>
+#include <sys/mman.h>
+#elif defined(HAVE_SYS_FINIT_MODULE)
+#include <sys/syscall.h>
+#endif
+#endif
 
 static void parse_cmdline();
 static int parse_cmdline_helper(void *data, const char *line, int line_is_incomplete);
@@ -39,6 +47,13 @@ static void cleanup_initramfs();
 #ifdef ENABLE_DEBUG
 static void debug_dump_file(const char *fn);
 static int debug_dump_file_helper(void *data, const char *line, int line_is_incomplete);
+#endif
+
+#ifdef ENABLE_MODULES
+static void load_modules();
+static int load_module_helper(void *data, const char *line, int line_is_incomplete);
+static int cleanup_module_helper(void *data, const char *line, int line_is_incomplete);
+extern int init_module(void *module_image, unsigned long len, const char *param_values);
 #endif
 
 static char root_device[MAX_PATH_LEN];
@@ -67,6 +82,13 @@ int main(int argc, char **argv)
 #ifdef ENABLE_DEBUG
   warn("Begun execution", NULL);
 #endif
+
+#ifdef ENABLE_MODULES
+  load_modules();
+#ifdef ENABLE_DEBUG
+  warn("Loaded all kernel moduels", NULL);
+#endif
+#endif /* defined(ENABLE_MODULES) */
 
   r = mount("proc", "/proc", "proc", MS_NODEV | MS_NOEXEC | MS_NOSUID, NULL);
   if (r < 0)
@@ -446,4 +468,107 @@ void cleanup_initramfs()
   (void) rmdir("/dev");
   (void) rmdir("/proc");
   (void) unlink("/init");
+#ifdef ENABLE_MODULES
+  (void) traverse_file_by_line(MODULES_FILE, (traverse_line_t) cleanup_module_helper, NULL);
+  (void) unlink(MODULES_FILE);
+#endif
 }
+
+#ifdef ENABLE_MODULES
+void load_modules()
+{
+  (void) traverse_file_by_line(MODULES_FILE, (traverse_line_t) load_module_helper, NULL);
+}
+
+int load_module_helper(void *data, const char *line, int line_is_incomplete)
+{
+  (void)data;
+  int r, fd;
+  char *ptr;
+  const char *opts;
+
+  if (line_is_incomplete)
+    return 0;
+
+  if (!*line)
+    return 0;
+
+  ptr = strchr(line, ' ');
+  if (ptr) {
+    *ptr = '\0';
+    opts = ptr + 1;
+  } else {
+    opts = "";
+  }
+
+#ifdef ENABLE_DEBUG
+  if (*opts)
+    warn("Loading kernel module ", line, " (with options: ", opts, ")", NULL);
+  else
+    warn("Loading kernel module ", line, NULL);
+#endif
+
+  fd = open(line, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    warn("Couldn't load ", line, ": ", strerror(errno), NULL);
+    return 0;
+  }
+#if defined(HAVE_FINIT_MODULE)
+  r = finit_module(fd, opts, 0);
+  if (r < 0)
+    r = -errno;
+#elif defined(HAVE_SYS_FINIT_MODULE)
+  r = syscall(SYS_finit_module, fd, opts, 0);
+  if (r < 0)
+    r = -errno;
+#else
+  {
+    void *contents;
+    struct stat st;
+
+    r = fstat(fd, &st);
+    if (r < 0) {
+      warn("Couldn't stat ", line, ": ", strerror(errno), NULL);
+      close(fd);
+      return 0;
+    }
+
+    contents = mmap(NULL, (size_t) st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (!contents) {
+      warn("Couldn't mmap ", line, ": ", strerror(errno), NULL);
+      close(fd);
+      return 0;
+    }
+    r = init_module(contents, (unsigned long) st.st_size, opts);
+    if (r < 0)
+      r = -errno;
+    munmap(contents, (size_t) st.st_size);
+  }
+#endif
+
+  /* Ignore duplicate modules, this simplifies initramfs creation logic
+   * a bit. */
+  if (r < 0 && r != -EEXIST)
+    warn("Couldn't load ", line, ": ", strerror(-r), NULL);
+
+  close(fd);
+
+  return 0;
+}
+
+int cleanup_module_helper(void *data, const char *line, int line_is_incomplete)
+{
+  (void)data;
+  char *ptr;
+
+  if (line_is_incomplete)
+    return 0;
+
+  ptr = strchr(line, ' ');
+  if (ptr)
+    *ptr = '\0';
+
+  (void) unlink(line);
+  return 0;
+}
+#endif
