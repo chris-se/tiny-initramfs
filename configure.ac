@@ -19,6 +19,12 @@ AS_IF([test x"$enable_nfs4" = x"yes"], [AC_DEFINE([ENABLE_NFS4], [1], [Define if
 AM_CONDITIONAL([ENABLE_NFS4], [test x"$enable_nfs4" = x"yes"])
 AC_ARG_ENABLE([debug], [AS_HELP_STRING([--enable-debug], [Enable support for printing debug messages])])
 AS_IF([test x"$enable_debug" = x"yes"], [AC_DEFINE([ENABLE_DEBUG], [1], [Define if debug messages are enabled])])
+AC_ARG_WITH([variant-name], [AS_HELP_STRING([--with-variant-name=NAME], [The variant name of the installed binary (default: none)])])
+AS_IF([test x"$with_variant_name" != x""], [
+  AC_DEFINE([VARIANT], ["$with_variant_name"], [The installed binary variant name])
+  AC_SUBST([VARIANT], ["$with_variant_name"])
+])
+AM_CONDITIONAL([HAVE_VARIANT], [test x"$with_variant_name" != x""])
 
 # Check for harmful CFLAGS in our build and warn the user.
 AS_CASE([$CFLAGS], [*-O[[12345\ ]]*],

@@ -10,3 +10,13 @@ tiny_initramfs_CFLAGS     = -fno-inline-small-functions -fno-caller-saves
 tiny_initramfs_LDFLAGS    = -static
 
 EXTRA_DIST = README.md tiny_initramfs.h nfs4.h
+
+if HAVE_VARIANT
+install-exec-hook:
+	cd $(DESTDIR)$(pkglibexecdir) && \
+		mv -f tiny_initramfs init-@VARIANT@
+else
+install-exec-hook:
+	cd $(DESTDIR)$(pkglibexecdir) && \
+		mv -f tiny_initramfs init
+endif
