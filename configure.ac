@@ -4,7 +4,8 @@ AC_INIT([tiny-initramfs],
         [https://github.com/chris-se/tiny-initramfs/issues],
         [tiny-initramfs],
         [https://github.com/chris-se/tiny-initramfs])
-AM_INIT_AUTOMAKE([foreign 1.11 silent-rules -Wall dist-xz no-dist-gzip dist-lzip])
+AM_INIT_AUTOMAKE([foreign 1.11 -Wall dist-xz no-dist-gzip dist-lzip])
+AM_SILENT_RULES([yes])
 : ${CFLAGS="-Os"}
 AC_PROG_CC
 AC_CONFIG_HEADERS([config.h])
