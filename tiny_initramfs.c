@@ -434,7 +434,7 @@ void try_exec(int orig_argc, char *const orig_argv[], const char *binary)
   if (orig_argc > 255)
     panic(0, "Too many arguments to init.", NULL);
 
-  argv[0] = (char *)init_binary;
+  argv[0] = (char *)binary;
   for (i = 1; i < orig_argc; i++)
     argv[i] = orig_argv[i];
   argv[i] = NULL;
