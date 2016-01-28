@@ -80,13 +80,13 @@ int main(int argc, char **argv)
 #endif
 
 #ifdef ENABLE_DEBUG
-  warn("Begun execution", NULL);
+  warn("Began execution", NULL);
 #endif
 
 #ifdef ENABLE_MODULES
   load_modules();
 #ifdef ENABLE_DEBUG
-  warn("Loaded all kernel moduels", NULL);
+  warn("Loaded all kernel modules", NULL);
 #endif
 #endif /* defined(ENABLE_MODULES) */
 

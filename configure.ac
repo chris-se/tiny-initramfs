@@ -63,6 +63,6 @@ int a =
 #ifdef __GLIBC__
 42
 #endif
-;]])], [AC_MSG_WARN([you are using glibc, binaries will be huge. Consider using an alternativ libc implementation (e.g. dietlibc, musl) instead.])], [])
+;]])], [AC_MSG_WARN([you are using glibc, binaries will be huge. Consider using an alternative libc implementation (e.g. dietlibc, musl) instead.])], [])
 
 AC_OUTPUT
