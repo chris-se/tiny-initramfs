@@ -52,10 +52,6 @@ AS_CASE([$CFLAGS], [*-O[[12345\ ]]*],
         [AC_MSG_WARN([optimization level other than -Os specified in CFLAGS, this will increase your binary size.])], [])
 AS_CASE([$CFLAGS], [*-Os*],
         [], [AC_MSG_WARN([optimization level -Os not specified in CFLAGS, this will increase your binary size.])])
-AS_CASE([$CFLAGS], [*\ -g*],
-        [AC_MSG_WARN([debugging option -g specified in CFLAGS, this will increase your binary size.])], [])
-AS_CASE([$CFLAGS], [-g*],
-        [AC_MSG_WARN([debugging option -g specified in CFLAGS, this will increase your binary size.])], [])
 
 # Check if the user links against glibc.
 AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <features.h>
