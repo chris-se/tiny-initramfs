@@ -21,7 +21,7 @@
  *
  * The mount_nfs4 function is based on the nfs4mount function in
  * util-linux (but heavily modified), originally by Trond Myklebust
- * <trond.myklebust@fys.uio.no>, licensed under the GLPv2+.
+ * <trond.myklebust@fys.uio.no>, licensed under the GPLv2+.
  */
 
 #include <sys/types.h>

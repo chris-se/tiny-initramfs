@@ -77,7 +77,7 @@ void showmsgv(va_list ap, const char *before1, const char *after1, const char *a
     iov[argc].iov_base = (char *)arg;
     iov[argc].iov_len = strlen(arg);
     argc++;
-    /* We only support a fixed number of arguments arguments. */
+    /* We only support a fixed number of arguments. */
     if (argc + 1 + extra_arg_count > 32)
       break;
   }

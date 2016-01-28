@@ -3,7 +3,7 @@
  *
  * nfs4.h: NFSv4 kernel interface definition
  * Copyright (C) 2002 Trond Myklebust <trond.myklebust@fys.uio.no>
- * Originally licensed under the GLPv2+.
+ * Originally licensed under the GPLv2+.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
