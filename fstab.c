@@ -99,7 +99,7 @@ int process_fstab_entry(fstab_find_fs_data *data, const char *orig_line, int lin
       return -ENODEV;
   }
 
-  /* NOTE: for the /usr use casee this is sufficient, but in general
+  /* NOTE: for the /usr use case this is sufficient, but in general
    *       one needs to de-escape the source and dest fields, see e.g.
    *       the fstab-decode utility.
    */
