@@ -257,7 +257,7 @@ int scan_devices(char *device_name /* MAX_PATH_LEN bytes */, int type, unsigned 
   while (1) {
     /* We assume that either of these will be available from a libc
        implementation. */
-#ifdef SYS_getdents
+#ifdef SYS_getdents64
     nread = syscall(SYS_getdents64, dirfd, (void *)buf, 1024);
 #else
     nread = getdents64(dirfd, (void *)buf, 1024);
