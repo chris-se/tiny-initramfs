@@ -57,7 +57,7 @@ Features
  * Very trivial module loading support (**no** automatic dependency
    resolution).
 
-When compiled on a x86_64 system with the default `-Og` compiler flags,
+When compiled on an x86_64 system with the default `-Og` compiler flags,
 statically linked against dietlibc 0.33~cvs20120325-6, the binary
 stripped and the resulting initramfs (without any modules added)
 compressed with `gzip -9`, the images produced are between 9 kiB and
@@ -328,7 +328,7 @@ many buffers that the amount of RAM used is a concern just yet, even
 for small systems), so that no real flexibility is sacrificed.
 
 None of this is extremely performance-critical (it is going to be quite
-fast regardless, because very little is done compared to a even just
+fast regardless, because very little is done compared to even just
 running a shell), so no algorithm is optimized for speed directly. For
 example, the mount option parser table is somewhat compressed to reduce
 the code size (negation and recursive variants of mount options are not
@@ -336,7 +336,7 @@ repeated), to the point where further reduction would likely sacrifice
 the readability of the code. Execution speed is achieved by doing very
 little, not by micro-optimizing algorithms.
 
-Some times it is necessary to reimplement certain libc functios because
+Sometimes it is necessary to reimplement certain libc functions because
 using the libc variants increase the image size too much. For example,
 using `inet_ntoa` and `inet_aton` (to convert between ASCII to binary
 representations of IP addresses) from the musl C library will cause
@@ -371,7 +371,7 @@ be interesting regardless:
    file systems.
 
 Note that the goal is to keep the `initrd.img` size smaller than 16 KiB
-on all plattforms, so a cutoff of 15 KiB is used on x86_64, to leave
+on all platforms, so a cutoff of 15 KiB is used on x86_64, to leave
 room for different assembly code sizes etc., at least when used in a
 minimal configuration. Therefore, some features (such as `UUID=` and
 NFSv4 support) are compile-time optional.
