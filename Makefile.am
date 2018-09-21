@@ -20,3 +20,9 @@ install-exec-hook:
 	cd $(DESTDIR)$(pkglibexecdir) && \
 		mv -f tiny_initramfs init
 endif
+
+initrd.img: tiny_initramfs
+	mkdir -p initramfs/dev initramfs/proc initramfs/target || true
+	cp tiny_initramfs initramfs/init
+	strip initramfs/init
+	cd initramfs && find . | cpio -o --quiet -R 0:0 -H newc | gzip > ../initrd.img
