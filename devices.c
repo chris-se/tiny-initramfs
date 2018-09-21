@@ -36,6 +36,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 
 /* Not all libcs define these things, unfortunately... */
 #ifndef DT_UNKNOWN
