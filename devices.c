@@ -59,6 +59,7 @@ static int is_fs_with_uuid(const char *device_name, const char *uuid_buf);
 static int is_ext234_with_uuid(const char *device_name, const char *uuid_buf);
 static int is_xfs_with_uuid(const char *device_name, const char *uuid_buf);
 static int is_btrfs_with_uuid(const char *device_name, const char *uuid_buf);
+static int is_f2fs_with_uuid(const char *device_name, const char *uuid_buf);
 static int read_block(const char *device_name, off_t start, void *data_buffer, size_t len);
 
 int parse_uuid(char *uuid_buf /* 16 bytes */, const char *string_representation)
@@ -413,7 +414,8 @@ int is_fs_with_uuid(const char *device_name, const char *uuid_buf)
 {
   return is_btrfs_with_uuid(device_name, uuid_buf)
       || is_xfs_with_uuid(device_name, uuid_buf)
-      || is_ext234_with_uuid(device_name, uuid_buf);
+      || is_ext234_with_uuid(device_name, uuid_buf)
+      || is_f2fs_with_uuid(device_name, uuid_buf);
 }
 
 int is_ext234_with_uuid(const char *device_name, const char *uuid_buf)
@@ -453,5 +455,18 @@ int is_btrfs_with_uuid(const char *device_name, const char *uuid_buf)
 
   return memcmp(&buf[0x40], "_BHRfS_M", 8) == 0
       && memcmp(&buf[0x20], uuid_buf, 16) == 0;
+}
+
+int is_f2fs_with_uuid(const char *device_name, const char *uuid_buf)
+{
+  char buf[0x7c];
+  int r;
+
+  r = read_block(device_name, 1024, buf, 0x7c);
+  if (r < 0 || r > 0)
+    return 0;
+
+  return memcmp(&buf[0x00], "\x10\x20\xf5\xf2", 4) == 0
+      && memcmp(&buf[0x6c], uuid_buf, 16) == 0;
 }
 #endif /* defined(ENABLE_UUID) */
